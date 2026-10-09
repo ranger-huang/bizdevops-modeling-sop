@@ -1,0 +1,63 @@
+# Glossary — 术语双语对照表
+
+> 按英文原词字母排序；`→` 指向相关 SOP 或分析框架编号（Fn）。
+
+- **Aggregate（聚合）** — 存储单元与一致性边界的对象簇，有唯一聚合根（→ SOP-05/12）
+- **Aggregate Root（聚合根）** — 聚合唯一对外入口；跨聚合引用须经标识（→ SOP-12）
+- **Anticorruption Layer（ACL，防腐层）** — 下游翻译保护角色；与 CF 互斥（→ SOP-07）
+- **Appendable Collection（P2，可追加集合）** — 仅可追加、不可枚举的原语（→ SOP-11）
+- **Architectural Refactoring（AR，架构重构）** — AR-1 Split Aggregate by Entities · AR-2 Split BC by Features · AR-3 Split BC by Owner · AR-4 Extract Aggregates by Volatility · AR-5 Extract Aggregates by Cohesion · AR-6 Merge Aggregates · AR-7 Merge BCs · AR-8 Extract Shared Kernel · AR-9 Suspend Partnership · AR-10 SK→Partnership · AR-11 Partnership→SK（→ SOP-05，patterns.md①）
+- **Bounded Context（BC，限界上下文）** — 模型与统一语言的边界；分型 FEATURE/APPLICATION/SYSTEM/TEAM（→ SOP-01）
+- **Buy-Rent-Build（买-租-建）** — 每服务自觉的组件来源决策，对治 NIH（→ 框架 F1）
+- **CML（上下文建模语言）** — 战略/战术 DDD 建模的文本 DSL（→ 各 SOP 折叠段）
+- **Collection（P3，集合）** — 可枚举 + 可追加，最常见的原语（→ SOP-11）
+- **Computation Function（计算函数）** — 只计算不改状态的操作职责（→ SOP-10）
+- **Conformist（CF，遵奉者）** — 全盘遵奉上游模型的下游角色（→ SOP-07）
+- **Context Map（上下文映射）** — BC 及其关系的总览图（→ SOP-01/05）
+- **Coupling Criteria（耦合准则）** — 14 项分解证据目录，按 XS~XL 排优先级（→ SOP-06，patterns.md②）
+- **CRC Card（CRC 卡）** — 组件-职责-协作轻量卡（→ SOP-13）
+- **Customer/Supplier（C/S，客户-供应商）** — 下游优先级进入上游规划的上下游特例（→ SOP-07）
+- **Decomposition Criteria（DC-1~5，分解准则）** — 业务实体 / 用例 / 代码属主 / 变更可能性（Parnas）/ 泛化 NFR（→ SOP-06）
+- **Design Smells（API 五坏味道）** — Create without Delete · Delete without Create · Ambiguous POST · Ambiguous PUT · Write-Only（→ SOP-11，patterns.md④）
+- **Domain Event（领域事件）** — 已发生之领域事实；命令（Command）引发之（→ SOP-03/09）
+- **Domain Vision Statement（域愿景陈述）** — BC 职责的一句话愿景（→ SOP-01）
+- **DPR（设计实践仓库）** — 方法元素库；元模型：角色-活动-技术-模板-工件（→ SOP-13）
+- **Embedded Entity（内嵌实体）** — 消息内嵌关联数据，免多次往返（→ SOP-10）
+- **Enabling vs. Directing（赋能型 vs 指令型）** — 方法态度基线：导游而非律师（→ SOP-13）
+- **Enumerable Collection（P1，可枚举集合）** — 只读枚举的原语（→ SOP-11）
+- **Evolution Strategy（EvolutionStrategy，演进策略）** — 七值枚举：ETERNAL_LIFETIME / LIMITED_GUARANTEED_LIFETIME / TWO_IN_PRODUCTION / AGGRESSIVE_OBSOLESCENCE / EXPERIMENTAL_PREVIEW / OTHER / UNDISCLOSED（默认）；前五与 MAP 演进模式一一对应（→ SOP-15，patterns.md⑨）
+- **Experimental Preview（实验性预览）** — best-effort 提供 API，零承诺（→ SOP-15）
+- **Fragmentation（碎片化）** — 从资源树切出以容器资源为根的子树（→ SOP-11）
+- **Information Holder（信息持有者资源）** — 数据类端点角色；特化：Master/Operational/Reference Data Holder、Data Transfer Resource、Link Lookup Resource（→ SOP-10）
+- **IRT Triple（IRT 三元组）** — Identifier-Role-Type；角色 D/ID/L/MD，P 为占位符（→ SOP-10）
+- **Landing Zone（落地区间）** — SLO 的 minimal/target/optimal 三档测量；前两者必填（→ SOP-14）
+- **Linked Information Holder（链接信息持有者）** — 以 Link 引用另端点，避免大消息（→ SOP-10）
+- **MAP（微服务 API 模式）** — 消息载荷结构的模式语言（→ SOP-10）
+- **MDSL（微服务领域专用语言）** — 抽象服务契约语言，MAP 作装饰器（→ SOP-07/10）
+- **Mighty Methods（强大方法五判据）** — 人本设计 / 具体产出 / 全设计空间 / 团队成长 / 易教好用（Keeling）（→ SOP-13）
+- **Model-Code Gap（模型-代码鸿沟）** — 模型与实现随时间静默偏离（→ SOP-12）
+- **Mutable Collection（P4，可变集合）** — 可整集合批量替换/清空的原语（→ SOP-11）
+- **nanoentity（纳米实体）** — 实体属性派生的最小耦合分析单元（→ SOP-06）
+- **Open Host Service（OHS，开放主机服务）** — 上游一对多通用服务角色（→ SOP-07）
+- **Pagination（分页）** — 大结果集模式：page/offset/cursor 变体（→ SOP-10）
+- **Partnership（P，伙伴关系）** — 两 BC 同成败的对称关系（→ SOP-05）
+- **Pricing Plan（计费计划）** — 计量与计费模式：FREEMIUM / SUBSCRIPTION / USAGE_BASED；可以 Rate Limit 强制档位、应引用 SLA（→ SOP-14，patterns.md⑧）
+- **Processing Resource（处理资源）** — 执行计算/流程的端点角色（→ SOP-10）
+- **Published Language（PL，发布语言）** — 上游发布商定的公共交换模型（→ SOP-07）
+- **Rate Limit（限流）** — 用量配额模式：MAX_CALLS / DATA_QUOTA / NONE + within 窗口；超限拒绝（如 HTTP 429）（→ SOP-14，patterns.md⑧）
+- **Resource Tree（资源树）** — API 树：路径段为节点、HTTP 方法为叶（→ SOP-11）
+- **Retrieval Operation（检索操作）** — 只读操作职责；对应 GET（→ SOP-10）
+- **Semantic Versioning（语义化版本）** — 层级三段版本号 x.y.z（major/minor/patch）（→ SOP-15）
+- **Service Level Agreement（SLA，服务级别协议）** — 结构化质量目标：type/objective(≥1)/penalty/notification；template 可复用；可含限流与计费细节（→ SOP-14）
+- **Shared Kernel（SK，共享内核）** — 两 BC 共享部分模型的对称关系（→ SOP-05）
+- **SMART NFR（SMART 非功能需求）** — Specific/Measurable/Agreed upon/Realistic/Time bound（→ SOP-13）
+- **State Creation Operation（状态创建操作）** — 新建职责；对应 POST（→ SOP-10）
+- **State Transition Operation（状态迁移操作）** — 变更职责：PUT 全量 / PATCH 部分 / DELETE 变体（→ SOP-10）
+- **Stereotype（刻板印象）** — 元素语义定型：消息元素 D/ID/L/MD；实体/值对象/领域事件等（→ SOP-10/12）
+- **Two in Production（双版本在产）** — 同时支持两版本、滚动重叠退役（→ SOP-15）
+- **Upstream-Downstream（U/D，上游-下游）** — 上游提供、下游消费；OHS/PL 归上游，ACL/CF 归下游（→ SOP-07）
+- **Value Register（价值登记册）** — 干系人价值类型与受益人登记册（→ SOP-04）
+- **VDAD（价值驱动分析设计）** — 干系人→价值登记→故事估值（含伦理）→两张地图（→ SOP-04）
+- **Version Identifier（版本标识符）** — 显式版本指示：进 API 描述与交换消息（→ SOP-15）
+- **Write-Only（只写）** — 无任何读操作的坏味道（→ SOP-11）
+- **Y-Statement（Y 型决策记录）** — 一句话：决策 + 理由 + 接受的代价（→ SOP-13）
