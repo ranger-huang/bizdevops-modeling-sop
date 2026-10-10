@@ -93,12 +93,12 @@
 
 ## 使用示例
 
-货运跟踪域（Cargo Tracking）走查——两个聚合属主不同（CargoPlaner / Administrators），核心用例 `ViewTracking` 只读跟踪链数据：
+货运跟踪域（Cargo Tracking）走查——两个聚合属主不同（CargoPlanner / Administrators），核心用例 `ViewTracking` 只读跟踪链数据：
 
 ```yaml
 decomposition_analysis:
   step1_preconditions:
-    nanoentities:            # 实体+属性派生（前提：实体已带属性）
+    nanoentities:            # 实体+属性派生（前提：Entity 已带 Attribute）
       - Cargo.trackingId
       - Cargo.origin
       - Cargo.routeSpecification
@@ -106,14 +106,14 @@ decomposition_analysis:
       - Cargo.delivery
       - Location.unLocode
       - Location.name
-    use_case_interactions:   # 读写关系已明确
+    use_case_interactions:   # 读写关系已明确（CML 中即 UseCase 的 interactions）
       ViewTracking:
         - read Cargo with [trackingId]
         - read HandlingEvent with [handlingEventType, location, completionTime]
         - read Delivery with [transportStatus, estimatedArrivalTime, misdirected]
         - read Voyage with [voyageNumber]
         - read RouteSpecification with [destination]
-    ownership: { Cargo: CargoPlaner, Location: Administrators }
+    ownership: { Cargo: CargoPlanner, Location: Administrators }   # 二者在 CML 中须声明为 type = TEAM 的 Bounded Context
   step4_priorities:          # 本项目上下文：跨团队协作摩擦是主要痛点
     Identity & Lifecycle Commonality: L
     Shared Owner: L           # 调高：两属主团队发布节奏完全不同
@@ -121,18 +121,21 @@ decomposition_analysis:
     Latency: S
     Storage Similarity: XS
   step5_clustering:
-    algorithm: 图聚类（马尔可夫聚类）
-    candidate_A: { 货运跟踪服务: [Cargo.* 及跟踪链], 基础数据服务: [Location.*] }
-    candidate_B: { 单一服务: [全部纳米实体] }
+    algorithm: "Markov Clustering"          # 图聚类
+    candidate_A:
+      CargoTrackingService: [Cargo.*]       # 货运跟踪服务：Cargo.* 及跟踪链
+      BaseDataService: [Location.*]         # 基础数据服务
+    candidate_B:
+      MonolithicService: [all nanoentities] # 单一服务
   step6_review:
     candidate_A:
-      criterion_trace: "Shared Owner（属主相异）+ Semantic Proximity（ViewTracking 只读跟踪链，Location 仅被引用）"
-      conway_check: "兼容 ✓（一服务一团队）"
+      criterion_trace: "Shared Owner + Semantic Proximity"   # 属主相异；ViewTracking 只读跟踪链，Location 仅被引用
+      conway_check: COMPATIBLE              # ✓ 一服务一团队
       cross_service_cost: "Location 查询低频、可缓存，延迟代价可接受"
     candidate_B:
-      criterion_trace: "仅 Storage Similarity（XS 级）支持"
-      conway_check: "冲突 ✗（两团队共维一服务，回到当前摩擦）"
-  step7_decision: "选 A；用 Y-statement 记录；后续经 AR-3/AR-4 增量演进"
+      criterion_trace: "Storage Similarity"                  # 仅 XS 级准则支持
+      conway_check: CONFLICT                # ✗ 两团队共维一服务，回到当前摩擦
+  step7_decision: candidate_A               # 用 Y-Statement 记录；后续经 AR-3/AR-4 增量演进
 ```
 
 ## 技术交付物
@@ -178,12 +181,14 @@ decomposition_analysis:
 - CML 规范 §30 耦合准则目录与优先级方法：14 项准则、XS~XL 五级优先级、默认优先级参考、图聚类算法选项（该工具集成已停用，本 SOP 仅取准则目录与优先级方法学）
 - SummerSoC 2020（Kapferer & Zimmermann）§3.2a：DC-1~5 分解准则、准则遴选三元准则（实践相关性/代表性/一般性）、Parnas 1972、Conway 定律、准则来源（Gysel 等耦合准则目录及 DDD 实践者文献）
 - ICWE 2020 主题演讲（Zimmermann）：分解启发式批判（两个披萨、LOC、if-then 规则）、"哪些耦合准则对（微）服务分解重要"之问
+- 语法形态核对（2026-10-10，`ContextMapper/context-mapper-dsl` @ master）：`Aggregate` 的 `owner=[BoundedContext]`（须指向 `type = TEAM` 的 Bounded Context）与特征位 `contentVolatility` / `likelihoodForChange`（别名 `structuralVolatility`）/ `availabilityCriticality` / `consistencyCriticality` / `storageSimilarity` / `securityCriticality`；枚举取值 `Volatility` = UNDEFINED|NORMAL|RARELY|OFTEN、`Criticality` = UNDEFINED|NORMAL|HIGH|LOW、`Similarity` = UNDEFINED|NORMAL|HUGE|TINY；`UseCase` 的 `interactions` 由 `NormalFeature` 组成（`verb` + `a|an|the` + `entity` + 可选 `with its` 属性列表 + 可选 `in|for|to` 容器实体）——步骤 1 的"读写交互"即此语法
+- 校正记录：语料原稿把属主拼作 `CargoPlaner`（折叠段摘录保留原拼写），正文与使用示例统一改为 `CargoPlanner`
 
 ---
 <details>
 <summary>📎 原始语法参考（CML/MDSL）— 点击展开</summary>
 
-以下片段忠实摘自语料原文（CML：Context Mapping DSL），供对接 BCM 的 CUE 元模型时参考。
+以下片段忠实摘自语料原文（CML：Context Mapping DSL），供对接 BCM 的 CUE 元模型时参考。上方「使用示例」的 `decomposition_analysis` 是**决策记录**（非 DSL 语法），其每一项取值都应能落到下方摘录的 CML 特征位上。两处需注意：① 摘录中的属主名 `CargoPlaner` 为语料原稿拼写，正文与示例已统一为 `CargoPlanner`，摘录按约定保留原样；② §18 特征标注摘录把 `Aggregate` 写在顶层，那是片段省略了外层 `BoundedContext`——按 `ContextMappingModel` 规则，`Aggregate` 与 `enum` 都不能出现在 `.cml` 顶层。
 
 **前提补全的输入形态：带属性与属主的聚合**（没有属性就派生不出纳米实体）——CML §42 示例模型：
 
