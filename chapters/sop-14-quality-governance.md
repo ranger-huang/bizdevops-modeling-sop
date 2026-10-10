@@ -82,51 +82,119 @@
 
 ## 使用示例
 
-SaaS 计费 API 的质量治理决策记录（语料综合示例的中立化改写，伪码风格）：
+SaaS 计费 API 的质量治理（原生 MDSL；语料综合示例的中立化改写）。两处硬性约束：子句顺序**强制**为 `type?` → `objective+` → `penalty?` → `notification?` → `rate plan?` → `rate limit*`；`SLA template` 在 `ServiceSpecification` 中位于 `endpoint type` 之后、`API provider` 之前。
+
+```mdsl
+API description SaaSMonetizationAPI version "1.0.0"
+usage context PUBLIC_API for FRONTEND_INTEGRATION
+
+data type CustomerId D<string>
+data type CustomerRecord {CustomerId, "name":D<string>}
+
+endpoint type CustomerContract version "1.0.0"
+  serves as INFORMATION_HOLDER_RESOURCE
+  exposes
+    operation lookupCustomer version "1.0.0"
+      with responsibility RETRIEVAL_OPERATION
+      expecting payload CustomerId
+      delivering payload CustomerRecord
+    operation listCustomers
+      with responsibility RETRIEVAL_OPERATION
+      delivering payload CustomerRecord*
+
+// 步骤 4：一个档位一个具名 SLA template（可跨端点复用）
+SLA template FreeTierSLA
+  type QUANTITATIVE                                  // 步骤 1：五级形式化标注 NONE|IMPLICIT|INFORMAL|QUALITATIVE|QUANTITATIVE
+  objective responseTime "responseTimeUnder" 2 seconds
+  objective availability "availability" 99 "percent, best effort"   // 步骤 3：测量值只能是 INT，99.9% 无法表达 → 整数近似 + 文本免责
+  penalty "none, free tier"
+  notification "status page only"
+  rate plan FREEMIUM
+  rate limit MAX_CALLS 60 within 1 hours              // 对齐知名开放 API 的未认证档
+  rate limit DATA_QUOTA 10 MB within 24 hours
+
+SLA template StandardTierSLA
+  type QUANTITATIVE
+  objective responseTime "responseTimeUnder" 1 seconds
+  objective availability "availability" 99 "percent"
+  penalty "service credits"
+  notification "support ticket"
+  rate plan SUBSCRIPTION
+  rate limit MAX_CALLS 5000 within 1 hours
+  rate limit DATA_QUOTA 1 GB within 24 hours
+
+SLA template MeteredTierSLA
+  objective throughput "concurrentRequestsPerSecond" 10   // 并发只能作 SLO 目标表达，无强制语义（语法无 CONCURRENT 限流分支）
+  rate plan USAGE_BASED
+  rate limit MAX_CALLS 1000000 calls within 30 days       // 月度计量上限档；calls / days 是 ID 单位，无语义校验
+
+SLA template PartnerTierSLA
+  objective latency "responseTimeUnder"
+    minimal 5 seconds                                     // 步骤 3：Landing Zone 三档；minimal + target 必填，optimal 可选
+    target 2 seconds
+    optimal 1 seconds
+  rate plan SUBSCRIPTION
+  rate limit NONE within 1 hours                          // 显式不限流 ≠ 未声明（NONE 也必须带 within）
+
+// 步骤 2：挂载点决策 —— endpoint 实例级引用模板 + provider 级内联子句
+API provider SaaSProviderProd version "1.0.0"
+  offers CustomerContract
+    at endpoint location "https://api.saas.example.com:443/v1"
+    via protocol HTTP binding resource CustomerResource at "/customers"
+    with endpoint SLA StandardTierSLA
+    endpoint governance TWO_IN_PRODUCTION
+    at endpoint location "https://free.saas.example.com:443/v1"
+    via protocol HTTP binding resource CustomerResourceFree at "/customers"
+    with endpoint SLA FreeTierSLA
+    endpoint governance AGGRESSIVE_OBSOLESCENCE
+  with provider SLA
+    objective uptime "monthlyUptime" 99 "percentage"
+    rate plan SUBSCRIPTION
+    rate limit MAX_CALLS 100000 within 24 hours
+  provider governance LIMITED_GUARANTEED_LIFETIME
+
+// under conditions 与 with provider SLA 互斥：沙箱 provider 选了条款链接，就不能再挂 provider 级 SLA
+API provider SaaSProviderSandbox
+  offers CustomerContract
+    at endpoint location "https://sandbox.saas.example.com:443/v1"
+    via protocol HTTP binding resource CustomerResourceSandbox
+    with endpoint SLA MeteredTierSLA
+    endpoint governance EXPERIMENTAL_PREVIEW
+  under conditions "See https://saas.example.com/terms.html"
+  provider governance EXPERIMENTAL_PREVIEW
+
+API client WebApp version "1.0.0"
+  consumes CustomerContract
+  from SaaSProviderProd
+  via protocol HTTP
+
+// 网关端点同样可挂质量子句；注意含 API gateway 时 -g oas 会崩（ClassCastException），纯编译校验不受影响
+API gateway SaaSGateway version "1.0.0"
+  offers CustomerContract
+    at endpoint location "https://gateway.saas.example.com:443/v1"
+    via protocol HTTP binding resource GatewayCustomerResource
+    with endpoint SLA PartnerTierSLA
+    endpoint governance TWO_IN_PRODUCTION
+  consumes CustomerContract
+  from SaaSProviderProd
+  via protocol HTTP
+  evolution governance TWO_IN_PRODUCTION       // gateway 用 evolution governance，不是 provider governance
+```
 
 ```yaml
-api: SaaSMonetizationAPI             # 公开 API，供前端集成，v1.0.0
-SLA模板:                             # 步骤 4：一个档位一个具名模板
-  - 名称: 免费档
-    等级: 定量                       # 步骤 1：五级形式化标注
-    SLO:
-      - { 目标: 响应时间, 测量: 上限 2 秒 }
-      - { 目标: 可用性, 测量: 99, 单位位备注: "百分比，尽力而为" }  # 步骤 3：整数近似 + 文本免责
-    罚则: 无（免费档）
-    通报: 仅状态页
-    计价方案: 免费增值
-    限流:
-      - { 种类: 调用次数配额, 配额: 60 次, 窗口: 1 小时 }   # 对齐知名开放 API 的未认证档
-      - { 种类: 数据量配额, 配额: 10 MB, 窗口: 24 小时 }
-  - 名称: 标准档
-    等级: 定量
-    SLO: [ { 目标: 响应时间, 测量: 上限 1 秒 }, { 目标: 可用性, 测量: 99 } ]
-    罚则: 服务补偿（credits）
-    通报: 支持工单
-    计价方案: 订阅
-    限流: [ { 种类: 调用次数配额, 配额: 5000 次, 窗口: 1 小时 },
-            { 种类: 数据量配额, 配额: 1 GB, 窗口: 24 小时 } ]
-  - 名称: 计量档
-    SLO: [ { 目标: 吞吐, 测量: 每秒并发请求数 10 } ]  # 并发只能作 SLO 目标表达，无强制语义
-    计价方案: 按量计价
-    限流: [ { 种类: 调用次数配额, 配额: 1000000 次, 窗口: 30 天 } ]  # 月度计量上限档
-  - 名称: 伙伴档
-    SLO:
-      - 目标: 延迟
-        分档测量: { 最低: 5 秒, 目标: 2 秒, 最优: 1 秒 }    # 步骤 3：三档目标
-    计价方案: 订阅
-    限流: [ { 种类: 不限流, 窗口: 1 小时 } ]         # 显式不限流 ≠ 未声明
-挂载:                                # 步骤 2：挂载点决策
-  - 端点: 生产付费域名 /v1 → 标准档模板；演进策略: 双实例生产运行
-  - 端点: 免费档域名 /v1 → 免费档模板；演进策略: 激进废弃
-  - 提供方整体（生产）: 内联子句（月度可用性目标 + 订阅 + 每 24 小时 100000 次总闸）
-  - 端点: 沙箱域名 /v1 → 计量档模板；提供方级改挂条款链接  # 条款与提供方级 SLA 互斥
-  - 端点: 网关域名 /v1 → 伙伴档模板               # 网关端点同样可挂质量子句
-治理:                                # 步骤 5/6：执行点映射
-  执行: 网关层统一计数与拦截；超限返回 429 类状态码 + 剩余配额通报头（执行层定义，契约不表达）
-  身份档位映射: 网关订阅配置维护（契约子句不绑定客户端身份）
-  监控闭环: 每条 SLO 对应一个告警阈值；违约证据触发罚则/通报兑现
-  已知损耗: 下游生成物丢失全部质量子句 → 监控/网关配置带外同步并登记（检查表兜底）
+governance_record:            # 步骤 5/6：契约表达不了的部分一律带外，且必须登记载体，否则视为未声明
+  enforcement: "网关层统一计数与拦截；超限返回 429 类状态码 + 剩余配额通报头（执行层定义，契约不表达）"
+  identity_tier_mapping: "网关订阅配置维护（契约子句不绑定客户端身份；API_KEY 属协议绑定层，与 rate limit 零关联）"
+  monitoring_loop: "每条 SLO 对应一个告警阈值；违约证据触发 penalty / notification 兑现"
+  known_loss: "下游生成物丢失全部质量子句 → 监控 / 网关配置带外同步并登记（检查表兜底）"
+  inexpressible:              # 表达力边界（契约内不可表达 → 一律带外）
+    - "金额 / 货币 / 计费周期（语法注释自认 actual pricing not modeled yet）"
+    - "per-operation 计量（SLO 无 operation 引用位）"
+    - "超限行为（429 / 错误体）"
+    - "按客户端身份差异化配额"
+    - "并发数强制（无 CONCURRENT 分支）"
+    - "配额重置锚点（within 只表达窗口长度）"
+    - "剩余配额回传头"
 ```
 
 ## 技术交付物
@@ -175,6 +243,7 @@ SLA模板:                             # 步骤 4：一个档位一个具名模�
 
 - 主源：《MDSL - Pricing Plan 与 Rate Limit（质量管理与治理）语法调研》——§一 MAP 模式内容总结（质量模式组索引、Pricing Plan / Rate Limit 模式要素、模式↔语法覆盖缺口表）、§二 语法规范、§三 官方示例与作者实测范例、§四 综合示例、§五 穷举证伪（20 反例与精确报错）、§六–§八 工具链支持状态 / 文档核查 / 已知限制与坑
 - 辅源：《MDSL - SLA 与版本演进（Versioning & Evolution）语法调研》§二——SLA 语法规则（逐字摘录）、SLA 关键字清单、挂载点、五个示例与 SLA 模板机制
+- 使用示例的语法基准：主源 §四「综合示例」——由作者按语法规则组装、经 CLI v6.0.0 实测 `has been compiled without errors`（探针 `probe/pos_p5_comprehensive.mdsl`）。本次改写只添加中文步骤注释与 `governance_record` 带外记录，未改动子句形态；两条实测教训（`under conditions` 与 `with provider SLA` 互斥；含 `API gateway` 时 `-g oas` 崩溃而纯编译校验不受影响）已写入示例注释
 - MAP 官方模式页（2026-10-10 实测抓取）：
   - 质量模式组索引 — <https://microservice-api-patterns.org/patterns/quality/>
   - Pricing Plan — <https://microservice-api-patterns.org/patterns/quality/qualityManagementAndGovernance/PricingPlan.html>（Forces 四项与 Table 1 分级价目取自原始 HTML）
@@ -187,7 +256,7 @@ SLA模板:                             # 步骤 4：一个档位一个具名模�
 <details>
 <summary>📎 原始 MDSL 语法参考（质量与限流子句）— 点击展开</summary>
 
-以下片段忠实摘自语料原文，供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考。
+以下片段忠实摘自语料原文，供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考。上方「使用示例」已是一份**完整的原生 MDSL 契约**——以主源 §四 那份经 CLI v6.0.0 实测编译通过的综合探针为基准，仅添加步骤映射注释，未改动任何子句形态；摘录按约定保留，用于对照 `APIDescription.xtext` 的规则原文与行号。
 
 2.1 RatePlan 规则（L615–618）
 
