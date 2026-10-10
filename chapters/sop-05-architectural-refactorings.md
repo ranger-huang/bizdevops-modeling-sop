@@ -103,27 +103,20 @@ AR 以模型变换（model transformation）方式实现：模型文本 → 解�
 逻辑建议顺序（非严格时序；过程可多轮重复；也允许其他分解策略）：
 
 ```
-领域分析 → 初始子域 → 初始 BC（来自用例 / 用户故事 / 事件风暴）
-                        │
-        ┌───────────────┴─────────────────────┐
-        │ BC 层                                │ 聚合层
-        ▼                                      ▼
-  AR-2 按特性/用例成型                    AR-1 按实体拆分
-        │（早期：BC 通常围绕特性形成）          ⇅
-        ▼                                 AR-6 过度拆分时合并回去
-  AR-3 团队变大时按属主拆分
-        │
-        ▼
-  AR-4 实现/维护期发现变更热点后按易变性提取
-        │
-        ▼
-  AR-5 按内聚 / QA / NFR 微调  ⇄  AR-7 过度拆分时合并回退
-        │
-        ▼
-  关系层演进：AR-8 / AR-9 / AR-10 / AR-11
-        │
-        ▼
-  关系定义 + 暴露聚合标注 → 推导服务契约（见 SOP-07）
+Domain Analysis → 初始 Subdomain → 初始 Bounded Context
+                                    （来自 UseCase / UserStory / Event Storming）
+   │
+   ├─ Aggregate 层：AR-1 Split Aggregate by Entities  ⇅  AR-6 Merge Aggregates（拆过头时合并回去）
+   │
+   └─ Bounded Context 层（早期通常围绕 Feature 形成）：
+        AR-2 Split BC by Features
+          ↓  AR-3 Split BC by Owner（团队变大时按属主拆分）
+          ↓  AR-4 Extract Aggregates by Volatility（实现/维护期发现变更热点后按易变性提取）
+          ↓  AR-5 Extract Aggregates by Cohesion（按内聚 / QA / NFR 微调）
+             ⇄ AR-7 Merge BCs（拆过头时合并回退）
+          ↓  Relationship 层演进：AR-8 Extract Shared Kernel · AR-9 Suspend Partnership
+             AR-10 SK → Partnership · AR-11 Partnership → SK
+          ↓  Relationship 定义 + exposedAggregates 标注 → 推导服务契约（见 SOP-07）
 ```
 
 ## 使用示例
@@ -133,35 +126,103 @@ AR 以模型变换（model transformation）方式实现：模型文本 → 解�
 ```yaml
 refactoring_record:
   id: AR-2025-003
-  trigger_signal: "Customers 与 Policies 分属两团队维护；合并冲突频繁、发布需双边协调"
-  ar_selected: "AR-3（Split Bounded Context by Owner）"
-  driving_criterion: "共享属主（Shared Owner）；Conway 定律——组织边界已固化，技术边界应对齐"
+  trigger_signal: "Customers 与 Policies 两个 Aggregate 分属两团队维护；合并冲突频繁、发布需双边协调"
+  ar_selected: "AR-3 Split BC by Owner"
+  driving_criterion: "Shared Owner (DC-3)"     # Conway 定律——组织边界已固化，技术边界应对齐
   alternatives_considered:
-    - "AR-2（按特性拆）：两聚合特性有重叠（客户视图需要保单数据），驱动力不如属主强"
+    - ar: "AR-2 Split BC by Features"          # 两 Aggregate 的 Feature 有重叠（客户视图需要保单数据），驱动力不如 Owner 强
   preconditions_check:
-    - "BC 含 ≥2 个聚合：满足（Customers、Policies）"
-    - "聚合分属不同团队：满足（owner 标注分别为 CustomerTeam / ContractTeam）"
+    - "Bounded Context 含 >=2 Aggregate：满足（Customers、Policies）"
+    - "Aggregate 的 owner 分属不同 TEAM 型 Bounded Context：满足（CustomerTeam / ContractTeam）"
   execution:
-    input: "CustomerCore（含 Customers、Policies）"
-    output: "CustomerCore（含 Customers） + PolicyContext（含 Policies）"
-    reference_adjustment: "上下文映射关系规则中的引用由变换自动替换"
-  relationship_added: "CustomerCore [U,OHS,PL] -> [D] PolicyContext（下游经 Published Language 访问保单数据，而非上游内部模型）"
+    input:  "CustomerCore { Customers, Policies }"
+    output: "CustomerCore { Customers } + PolicyContext { Policies }"
+    reference_adjustment: "Context Map 的 Relationship 规则中的引用由变换自动替换"
+  relationship_added: "CustomerCore [U,OHS,PL] -> [D] PolicyContext { exposedAggregates = Customers }"
+  relationship_rationale: "下游 PolicyContext 经 Published Language 访问上游暴露的客户主数据，而非上游内部模型"
   validation:
-    semantic_consistency: "通过（无悬空引用、无不可达 BC）"
-    criterion_review: "通过（每 BC 单一团队属主）"
-    model_check: "通过"
-  inverse_operation: "AR-7（未来团队合并时可回退）"
+    semantic_consistency: PASS     # 无悬空引用、无不可达 Bounded Context
+    criterion_review: PASS         # 每个 Bounded Context 单一团队 Owner
+    model_check: PASS
+  inverse_operation: "AR-7 Merge BCs"          # 未来团队合并时可回退
 ```
 
-前后对照（文本图）：
+前后对照（原生 CML；两段是**同一模型的前后两个状态**，各自独立成文，不可拼接）：
 
+```cml
+// 重构前：一个 Bounded Context 内两个 Aggregate 分属不同 Owner —— AR-3 的触发信号
+BoundedContext CustomerCore {
+	Aggregate Customers {
+		owner = CustomerTeam      // owner 引用 TEAM 型 BoundedContext（AR-3 的前置条件）
+
+		Entity Customer {
+			String firstName
+			String familyName
+		}
+	}
+
+	Aggregate Policies {
+		owner = ContractTeam
+
+		Entity Policy {
+			String policyNumber
+		}
+	}
+}
+
+BoundedContext CustomerTeam {
+	type = TEAM
+}
+
+BoundedContext ContractTeam {
+	type = TEAM
+}
 ```
-重构前：                             重构后：
-CustomerCore                         CustomerCore
- ├─ Customers （客户团队）             └─ Customers （客户团队）
- └─ Policies  （合同团队）            PolicyContext
-                                       └─ Policies  （合同团队）
-                                     关系：CustomerCore [U,OHS,PL] -> [D] PolicyContext
+
+```cml
+// 重构后（AR-3 输出）：按 Owner 拆为两个 Bounded Context，并补上下游关系与暴露聚合
+ContextMap {
+	contains CustomerCore, PolicyContext
+
+	CustomerCore [U,OHS,PL] -> [D] PolicyContext {
+		implementationTechnology = "RESTful HTTP"
+		exposedAggregates = Customers
+	}
+}
+
+BoundedContext CustomerCore {
+	domainVisionStatement = "Manages customer master data."
+
+	Aggregate Customers {
+		owner = CustomerTeam
+
+		Entity Customer {
+			String firstName
+			String familyName
+		}
+	}
+}
+
+BoundedContext PolicyContext {
+	domainVisionStatement = "Manages insurance policies."
+
+	Aggregate Policies {
+		owner = ContractTeam
+
+		Entity Policy {
+			String policyNumber
+		}
+	}
+}
+
+// TEAM 型 Bounded Context 不得出现在 SYSTEM_LANDSCAPE 类型的 Context Map 中（语义规则）
+BoundedContext CustomerTeam {
+	type = TEAM
+}
+
+BoundedContext ContractTeam {
+	type = TEAM
+}
 ```
 
 关系类走查（简例）：`CustomerSelfService` 与 `PolicyManagement` 原为 Partnership，同步规划与联合发布已无法维持 → 应用 **AR-9 策略 c**，转为 U/D 关系并明确 `PolicyManagement` 为上游；若两者后来共享部分客户模型且协作再度密切，可用 **AR-11** 转 Shared Kernel；共享部分再膨胀失控时，用 **AR-8** 提取为独立 BC。
@@ -206,12 +267,14 @@ CustomerCore                         CustomerCore
 - SummerSoC 2020（Kapferer & Zimmermann, *Domain-driven Service Design*）§3.2：DC-1~5 分解准则、模型变换三步机制、Fig.6 分步 AR 应用流程
 - CML 规范 §5（Context Map）、§6（Bounded Context）、§18（Aggregate：owner / useCases / features / 易变性特征标注）——语言参考部分
 - ICWE 2020 主题演讲（Zimmermann）：神话破除 3（NIH 综合征与分解启发式批判）、买/租/建决策上下文
+- 语法形态核对（2026-10-10，`ContextMapper/context-mapper-dsl` @ master）：`Aggregate` 规则的 `owner=[BoundedContext]`（须指向 TEAM 型 BC）与 `likelihoodForChange` / `structuralVolatility` / `contentVolatility` / `availabilityCriticality` / `consistencyCriticality` / `storageSimilarity` / `securityCriticality` 特征位、`useCases` / `userStories` / `features` 三种特性关联；`UpstreamDownstreamRelationship` 的 `[U,OHS,PL] -> [D]` 角色记法与 `exposedAggregates`（引用 `Aggregate` 元素，须真实声明）；官方变换 fixture `split-bc-by-owner-test-1-input.cml`（AR-3 前置条件的真实形态：两个 `Aggregate` 各带 `owner`，外加两个 `type = TEAM` 的 `BoundedContext`）
+- 校正记录：原示例 `relationship_added` 的注释称"下游经 Published Language 访问**保单数据**"，与 `CustomerCore [U,OHS,PL] -> [D] PolicyContext` 的方向矛盾——该方向下上游暴露的是客户主数据，且拆分后 `Policies` 已归属 `PolicyContext`。已按箭头方向修正为"访问客户主数据"，并补 `exposedAggregates = Customers`
 
 ---
 <details>
 <summary>📎 原始语法参考（CML/MDSL）— 点击展开</summary>
 
-以下片段忠实摘自语料原文（CML：Context Mapping DSL），供对接 BCM 的 CUE 元模型时参考。
+以下片段忠实摘自语料原文（CML：Context Mapping DSL），供对接 BCM 的 CUE 元模型时参考。上方「使用示例」的前后对照已是**原生 CML**，与下方 §18「聚合属主标注」摘录同形（`owner` 指向 TEAM 型 Bounded Context）；摘录按约定保留。一处需注意：§18 的易变性摘录把 `Aggregate` 写在顶层，那是片段省略了外层 `BoundedContext`——按 `ContextMappingModel` 规则，`Aggregate` 与 `enum` 都**不能**出现在 `.cml` 顶层。
 
 **上下文映射与关系属性**（`exposedAggregates` 是契约推导的输入；关系类 AR-8~11 直接操作这些关系线）——CML §5：
 
