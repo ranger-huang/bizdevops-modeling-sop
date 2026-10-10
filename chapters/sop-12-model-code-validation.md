@@ -42,9 +42,9 @@
 
 | 约束类 | 模型侧表述 | 代码侧含义 |
 |--------|-----------|-----------|
-| **BC 边界** | 每个限界上下文拥有自己的聚合与类型 | 上下文内的类型不得被其他上下文的代码单元（包/模块/服务）引用；跨上下文交互只经由契约（暴露的端点/发布语言） |
-| **聚合边界** | 聚合有唯一聚合根（aggregate root）；跨聚合引用通过标识（值对象 ID） | 聚合内部类型（非根实体、值对象）不得被聚合外直接引用；对其他聚合的引用必须是标识符而非对象引用 |
-| **刻板印象** | 实体/值对象/领域事件/服务等构造型（stereotype）标注 | 每类构造型对应代码中的构造约定：如值对象不可变、聚合根携带根标记、领域事件命名与载荷同模型一致 |
+| **BOUNDED_CONTEXT_BOUNDARY**（BC 边界） | 每个限界上下文拥有自己的聚合与类型 | 上下文内的类型不得被其他上下文的代码单元（包/模块/服务）引用；跨上下文交互只经由契约（暴露的端点/发布语言） |
+| **AGGREGATE_BOUNDARY**（聚合边界） | 聚合有唯一聚合根（aggregate root）；跨聚合引用通过标识（值对象 ID），在 CML 中即 `REF`（`-`）引用 | 聚合内部类型（非根实体、值对象）不得被聚合外直接引用；对其他聚合的引用必须是标识符而非对象引用 |
+| **STEREOTYPE**（刻板印象） | 实体/值对象/领域事件/服务等构造型（stereotype）标注 | 每类构造型对应代码中的构造约定：如值对象不可变、聚合根携带根标记、领域事件命名与载荷同模型一致 |
 
 实践提示：当模型规模大时，先只覆盖**一个**限界上下文的三类约束跑通闭环，再逐个上下文推广。
 
@@ -53,11 +53,13 @@
 将每条约束转写为一条可机器执行的规则（用你技术栈中任何"架构规则验证/适应度函数"手段：架构测试库、依赖分析脚本、自定义静态检查皆可）。规则表述模式：
 
 ```
-规则 <编号>（<约束类>）:
-  陈述: <谁> 不得/必须 <结构关系> <谁>
-  范围: <代码单元/包/命名空间模式>
-  依据: 模型 <元素路径>（如 OrderManagement/Order 聚合）
-  严重度: ERROR（红灯阻断）| WARNING（记录不阻断）
+rule <id> (<constraint class>):
+  statement:  <who> MUST NOT | MUST <structural relation> <whom>
+  scope:      <code unit / package / namespace pattern>
+  because:    model element <path>        # 如 eCommerceContext/Order（Aggregate）
+  severity:   ERROR（红灯阻断）| WARNING（记录不阻断）
+
+constraint class ∈ { BOUNDED_CONTEXT_BOUNDARY, AGGREGATE_BOUNDARY, STEREOTYPE }
 ```
 
 三条底线：
@@ -97,14 +99,49 @@
 
 电商域模型（两个聚合）：
 
-```
-BC eCommerceContext
-├── 聚合 Product
-│   ├── 实体 Product（聚合根）: id: ProductId, name, description, price
-│   └── 值对象 ProductId
-└── 聚合 Order
-    ├── 实体 Order（聚合根）: id: OrderId, purchaserId: UserId, items: List<OrderItem>, ordered
-    └── 值对象 OrderItem: productId: ProductId, amount
+```cml
+// R1（BOUNDED_CONTEXT_BOUNDARY）：本 BC 内类型不得被其他 BC 的代码单元引用
+BoundedContext eCommerceContext {
+	Aggregate Product {
+		// R5（STEREOTYPE）：aggregateRoot 标记 —— 每个模型聚合根在代码中有且仅有一个根标记类型
+		Entity Product {
+			aggregateRoot
+			- ProductId id;         // '-' 是 REF 终结符（'-' | 'reference'）：引用值对象标识，非普通属性
+			String name;
+			String description;
+			double price;
+		}
+
+		// R4（STEREOTYPE）：模型中标注为 ValueObject 的类型在代码中不可变（无公开设值方法）
+		ValueObject ProductId {
+			String value;
+		}
+	}
+
+	Aggregate Order {
+		Entity Order {
+			aggregateRoot
+			- OrderId id;
+			- UserId purchaserId;             // R3（AGGREGATE_BOUNDARY）：跨聚合引用用标识类型，不用实体类型
+			- List<OrderItem> items;          // R2（AGGREGATE_BOUNDARY）：OrderItem 不得被 Order 聚合外直接引用
+			DateTime ordered;
+		}
+
+		ValueObject OrderItem {
+			- ProductId productId;            // 引用 Product 聚合：只持标识，不持对象
+			int amount;
+		}
+
+		// 语料 §43 摘录未声明 OrderId / UserId，此处补齐使模型自洽（否则为悬空引用）
+		ValueObject OrderId {
+			String value;
+		}
+
+		ValueObject UserId {
+			String value;
+		}
+	}
+}
 ```
 
 注意：Order 引用 Product 用的是**值对象 ProductId（标识）**，而非对象本身。
@@ -113,11 +150,13 @@ BC eCommerceContext
 
 | 规则 | 约束类 | 陈述 | 严重度 |
 |------|--------|------|--------|
-| R1 | BC 边界 | `ecommerce` 包内类型不得被其他 BC 的包引用（契约层除外） | ERROR |
-| R2 | 聚合边界 | `OrderItem` 不得被 Order 聚合之外的代码直接引用 | ERROR |
-| R3 | 聚合边界 | 跨聚合引用必须使用标识类型（`ProductId`/`OrderId`），不得使用实体类型 | ERROR |
-| R4 | 刻板印象 | 模型中标注为值对象的类型在代码中不可变（无公开设值方法） | ERROR |
-| R5 | 刻板印象 | 每个模型聚合根在代码中有且仅有一个根标记类型 | WARNING |
+| R1 | BOUNDED_CONTEXT_BOUNDARY | `ecommerce` 包内类型不得被其他 BC 的包引用（契约层除外） | ERROR |
+| R2 | AGGREGATE_BOUNDARY | `OrderItem` 不得被 Order 聚合之外的代码直接引用 | ERROR |
+| R3 | AGGREGATE_BOUNDARY | 跨聚合引用必须使用标识类型（`ProductId`/`OrderId`），不得使用实体类型 | ERROR |
+| R4 | STEREOTYPE | 模型中标注为值对象的类型在代码中不可变（无公开设值方法） | ERROR |
+| R5 | STEREOTYPE | 每个模型聚合根在代码中有且仅有一个根标记类型 | WARNING |
+
+上表只列出陈述与严重度两列；模板要求的另两字段在本示例中的落点是——`because`（模型依据）= 上方 CML 里 R1~R5 注释所锚定的元素路径，`scope`（代码单元/包模式）= 各规则实际落地时按项目包结构填写。
 
 **红灯场景**：某开发者为"省一次查询"，让 `OrderItem` 直接持有 `Product` 实体引用 → R3 红灯。
 
@@ -134,7 +173,7 @@ BC eCommerceContext
 
 ## 成功标准
 
-- [ ] 规则覆盖**三类核心约束**：BC 边界、聚合边界、刻板印象（每类至少一条 ERROR 级规则）；
+- [ ] 规则覆盖**三类核心约束**：BOUNDED_CONTEXT_BOUNDARY（BC 边界）、AGGREGATE_BOUNDARY（聚合边界）、STEREOTYPE（刻板印象）——每类至少一条 ERROR 级规则；
 - [ ] 验证在构建期自动执行，**红灯即停**——违规代码无法静默合入主干；
 - [ ] 每一次模型与代码的偏离都有**显式决策记录**（出口 A 的提交说明或出口 B 的 Y-statement），无静默漂移；
 - [ ] 每条规则可回指模型元素；模型变更后规则集同步更新（步骤 5 比对无长期悬空项）；
@@ -165,12 +204,14 @@ BC eCommerceContext
 - CML §46.8：验证扩展首次发布——"验证代码中的战术 DDD 概念符合模型"；§46.9：示例应用演示该验证；§46.7：模型级语义验证器（歧义引用、不可达限界上下文）
 - CML §4 语义规则 Rule #1–#10（步骤 0 模型级校验的依据）
 - 分析报告 §3 SOP-12、§5 原则 11（模型-代码鸿沟需主动守护）、§6 反模式（静默模型漂移）
+- 语法形态核对（2026-10-10，`ContextMapper/context-mapper-dsl` @ master，`TacticDDDLanguage.xtext`）：`terminal REF : ('-' | 'reference')` 与 `Reference` 规则（`REF (visibility)? (CollectionType<@DomainObject> | @DomainObject) name`——故 `- ProductId id` 与 `- List<OrderItem> items` 都是**引用**而非普通属性）；`enum Visibility : public | protected | private | package`（**不含** `-` / `+` / `#` 符号，因此 `-` 只能解释为 REF）；`Attribute` 规则末尾为 `(";")?`（分号可选）；`Entity` 的 `aggregateRoot` 标记；`ValueObject` 单词连写；`Type` 含 `double` / `DateTime` / `BigDecimal` 等且末位为 `JavaIdentifier`
+- 校正记录：语料 §43 摘录里 `- OrderId id`、`- UserId purchaserId` 所引用的 `OrderId` / `UserId` 未在摘录内声明（`ProductId`、`OrderItem` 有声明），单独拷贝会悬空；使用示例已补 `ValueObject OrderId` 与 `ValueObject UserId` 使模型自洽
 
 ---
 <details>
 <summary>📎 原始语法参考（CML）— 点击展开</summary>
 
-CML §43 架构验证示例模型（本文步骤 2 三条规则的转写对象；注意跨聚合引用使用值对象标识 `- ProductId productId`）：
+CML §43 架构验证示例模型（本文步骤 2 三条规则的转写对象）。上方「使用示例」已是同一模型的**原生 CML 完整版**——补声明了摘录中未定义的 `OrderId` / `UserId`，并把 R1~R5 锚点标到对应元素上；摘录按约定保留原样。关键语法点：`- ProductId productId` 里的 `-` 是 `REF` 终结符（`terminal REF : ('-'|'reference')`），表示**引用另一个领域对象**，不是可见性修饰——这正是 AGGREGATE_BOUNDARY 类规则"跨聚合引用必须用标识"的语言级载体：
 
 ```cml
 BoundedContext eCommerceContext {
