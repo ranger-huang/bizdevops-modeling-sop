@@ -88,63 +88,118 @@
 
 ## 使用示例
 
-订单管理 API 的版本演进决策记录（工具中立 YAML 风格伪码；中立化改写自语料 §4.1 综合示例，策略用 MAP 模式名表述，多层级版本 + 演进策略 + 弃用计划）：
+订单管理 API 的版本演进（原生 MDSL + 带外记录；改写自语料 §4.1 那份经 CLI v6.0.0 实测编译通过的综合示例，为聚焦版本与演进已略去 SLA 模板——SLA 形态见 [SOP-14](sop-14-quality-governance.md)）。`version` 在语法中共有 **14 个可挂载位置**，逐元素可选、各层级独立演进：
+
+```mdsl
+API description OrderManagementAPI version "2.1.0"      // 步骤 1：API 整体语义化版本（STRING，显式书写）
+usage context PUBLIC_API for FRONTEND_INTEGRATION
+
+// 数据契约可独立版本化
+data type OrderId version "1.0.0" D<string>
+data type OrderRecord version "1.2.0" {OrderId, "total":D<int>, "currency":D<string>}
+
+// 端点契约（类层）与操作（各自带版本位）
+endpoint type OrderContract version "2.1.0"
+  serves as INFORMATION_HOLDER_RESOURCE
+  exposes
+    operation createOrder version "2.1.0"
+      with responsibility STATE_CREATION_OPERATION in REQUEST_REPLY conversation
+      expecting payload OrderRecord
+      delivering payload OrderId
+    operation lookupOrder version "2.1.1"                // 操作级补丁版本，可比契约更高
+      with responsibility RETRIEVAL_OPERATION in REQUEST_REPLY conversation
+      expecting payload OrderId
+      delivering payload OrderRecord
+    operation listOrders                                 // version 逐元素可选，此处不提供
+      with responsibility RETRIEVAL_OPERATION
+      expecting payload D<string>
+      delivering payload OrderRecord*
+
+// 步骤 3：演进策略三级挂载（endpoint / provider / gateway），可共存且语义独立
+API provider OrderProviderProd version "2.1.0"
+  offers OrderContract
+    at endpoint location "https://api.order.example.com:443/v2"
+    via protocol HTTP binding resource OrderResource at "/orders"
+    endpoint governance TWO_IN_PRODUCTION                // 端点级治理
+  provider governance LIMITED_GUARANTEED_LIFETIME        // provider 级治理
+
+// under conditions 与 with provider SLA 互斥（本例聚焦版本，未挂 SLA）
+API provider OrderProviderLegacy
+  offers OrderContract
+    at endpoint location "https://api.order.example.com:443/v1"
+    via protocol HTTP binding resource OrderResourceLegacy at "/orders"
+    endpoint governance AGGRESSIVE_OBSOLESCENCE          // 旧版本激进淘汰
+  under conditions "See https://order.example.com/terms.html"
+  provider governance AGGRESSIVE_OBSOLESCENCE
+
+API provider OrderProviderSandbox
+  offers OrderContract
+    at endpoint location "https://sandbox.order.example.com:443/v2"
+    via protocol HTTP binding resource OrderResourceSandbox at "/orders"
+    endpoint governance EXPERIMENTAL_PREVIEW
+  provider governance EXPERIMENTAL_PREVIEW
+
+API client OrderMobileApp version "2.1.0"
+  consumes OrderContract
+  from OrderProviderProd
+  via protocol HTTP
+
+API gateway OrderGateway version "2.1.0"
+  offers OrderContract
+    at endpoint location "https://gateway.order.example.com:443/v2"
+    via protocol HTTP binding resource GatewayOrderResource
+    endpoint governance TWO_IN_PRODUCTION
+  consumes OrderContract
+  from OrderProviderProd
+  via protocol HTTP
+  evolution governance TWO_IN_PRODUCTION     // gateway 用 evolution governance，且必须写在 consumes 之后
+```
 
 ```yaml
-# 订单管理 API — 版本演进决策记录
-api: OrderManagementAPI
-  契约版本: "2.1.0"                         # 步骤 1：API 整体语义化版本（字符串，显式书写）
-  版本标识方案: "语义化三段号 major.minor.patch；团队书面约定，语言不强制校验"
+version_register:                    # 步骤 2：层级 × 当前版本（14 个 version 挂载位中的 7 类）
+  versioning_scheme: "Semantic Versioning major.minor.patch（STRING；语言不强制校验，团队书面约定）"
+  entries:
+    - { level: API_DESCRIPTION, element: OrderManagementAPI, version: "2.1.0" }
+    - { level: DATA_TYPE,       element: OrderId,            version: "1.0.0" }
+    - { level: DATA_TYPE,       element: OrderRecord,        version: "1.2.0" }
+    - { level: ENDPOINT_TYPE,   element: OrderContract,      version: "2.1.0" }
+    - { level: OPERATION,       element: createOrder,        version: "2.1.0" }
+    - { level: OPERATION,       element: lookupOrder,        version: "2.1.1" }       # 操作级补丁，可比契约更高
+    - { level: OPERATION,       element: listOrders,         version: NOT_DECLARED }  # 未提供 version 子句
+    - { level: PROVIDER,        element: OrderProviderProd,  version: "2.1.0" }
+    - { level: CLIENT,          element: OrderMobileApp,     version: "2.1.0" }
+    - { level: GATEWAY,         element: OrderGateway,       version: "2.1.0" }
 
-版本标识登记:                               # 步骤 2：层级 × 当前版本（逐元素可选、多层级独立演进）
-  - { 层级: API 描述,     元素: OrderManagementAPI, 版本: "2.1.0" }
-  - { 层级: 数据契约,     元素: OrderId,            版本: "1.0.0" }
-  - { 层级: 数据契约,     元素: OrderRecord,        版本: "1.2.0" }
-  - { 层级: 端点契约,     元素: OrderContract,      版本: "2.1.0" }
-  - { 层级: 操作,         元素: createOrder,        版本: "2.1.0" }
-  - { 层级: 操作,         元素: lookupOrder,        版本: "2.1.1" }   # 操作级补丁，可比契约更高
-  - { 层级: 操作,         元素: listOrders,         版本: 未声明 }    # 版本标注逐元素可选
-  - { 层级: 运行时提供方, 元素: OrderProviderProd,  版本: "2.1.0" }
-  - { 层级: 运行时客户端, 元素: OrderMobileApp,     版本: "2.1.0" }
-  - { 层级: 运行时网关,   元素: OrderGateway,       版本: "2.1.0" }
+evolution_strategy_consistency:      # 步骤 3：三级策略共存时的一致性说明（差异须有书面理由）
+  - "OrderProviderProd：endpoint 级（TWO_IN_PRODUCTION）比 provider 级（LIMITED_GUARANTEED_LIFETIME）更具体——单端点可比整体更激进"
+  - "OrderProviderLegacy：endpoint 级与 provider 级一致（AGGRESSIVE_OBSOLESCENCE）"
+  - "OrderProviderSandbox：两级一致（EXPERIMENTAL_PREVIEW）"
 
-演进策略声明:                               # 步骤 3：策略 × 挂载层级（三级可共存、语义独立）
-  - { 挂载: 端点级,   载体: OrderProviderProd,    策略: "Two in Production（双版本并存）" }
-  - { 挂载: 提供方级, 载体: OrderProviderProd,    策略: "Limited Lifetime Guarantee（有限生命周期保证）" }
-  - { 挂载: 端点级,   载体: OrderProviderLegacy,  策略: "Aggressive Obsolescence（激进淘汰）" }
-  - { 挂载: 提供方级, 载体: OrderProviderLegacy,  策略: "Aggressive Obsolescence（激进淘汰）" }
-  - { 挂载: 端点级,   载体: OrderProviderSandbox, 策略: "Experimental Preview（实验性预览）" }
-  - { 挂载: 提供方级, 载体: OrderProviderSandbox, 策略: "Experimental Preview（实验性预览）" }
-  - { 挂载: 网关级,   载体: OrderGateway,         策略: "Two in Production（双版本并存）" }
-  一致性说明: >
-    生产提供方端点级（双版本并存）比提供方级（有限生命周期）更具体——单端点可比整体更激进；
-    旧版提供方端点级与提供方级一致（激进淘汰）；沙箱两级一致（实验性预览）。差异均有书面理由。
+breaking_change_impact:              # 步骤 4（示例行，展示交付物结构）
+  - change: "lookupOrder 响应拟新增字段"
+    compatibility: COMPATIBLE_ADDITIVE      # 标记为可选；若转必填则为 BREAKING
+    version_action: MINOR_BUMP              # 2.1.1 → 2.2.0；转必填则 MAJOR_BUMP
+    affected_clients: [OrderMobileApp]
+    migration_plan: "新增字段先标记为可选，灰度一个版本、监控读取方后再评估转必填"
 
-破坏性变更影响清单:                         # 步骤 4（示例行，展示交付物结构）
-  - 变更: "lookupOrder 响应拟新增字段"
-    类型: "兼容性新增（标记为可选）→ 若转必填则为破坏性"
-    版本动作: "可选新增升 minor（2.1.1 → 2.2.0）；转必填升 major"
-    受影响消费方: [OrderMobileApp]
-    迁移计划: "新增字段先标记为可选，灰度一个版本、监控读取方后再评估转必填"
+deprecation_schedule:                # 步骤 5：语言无元素级 deprecated / sunset 语法 → 一律带外
+  - element: "OrderProviderLegacy（/v1 端点，AGGRESSIVE_OBSOLESCENCE）"
+    deprecation_announced: "T0"
+    notice_period: ">= 90 days"
+    planned_sunset: "T0 + 180 days"
+    date_carrier: "under conditions 自由文本 + 带外弃用清单（语言层无法表达具体日期）"
+    caller_monitoring: "遥测确认 /v1 调用量降至阈值下、无活跃消费方，方可退役"
 
-弃用与退役时间表（带外机制）:               # 步骤 5：语言无元素级弃用/下线语法，用带外清单补齐
-  - 元素: "OrderProviderLegacy（/v1 端点，激进淘汰策略）"
-    弃用宣布日: "T0"
-    通知期: "≥ 90 天"
-    计划下线日: "T0 + 180 天"
-    日期承载方式: "写入条款条件自由文本 + 带外弃用清单（语言层无法表达具体日期）"
-    调用方监控: "遥测确认 /v1 调用量降至阈值下、无活跃消费方，方可退役"
+payload_version_marker:              # 步骤 6：报文层版本标识符（消费方可见）
+  pattern: Version_Identifier        # MAP 构造型：版本标记同时进 API 描述与交换消息
+  placement: [message payload, protocol header, endpoint location]
+  relation_to_model_layer: "互补——模型层 version 是建模元数据，报文层标识符供消费方做兼容路由"
 
-数据层版本标记:                             # 步骤 6：报文层版本标识符（消费方可见）
-  - 位置: "消息载荷 / 协议头 / 端点地址中的版本元数据字段"
-    标注: "Version Identifier（版本标识符模式）"
-    与模型层关系: "互补——模型层版本号是建模元数据，报文层标识符供消费方做兼容路由"
-
-演进评审记录:                               # 步骤 7（联动 SOP-12 回归验证）
-  - { 评审项: "每个破坏性变更有 major 提升 + 迁移计划",        结论: 通过 }
-  - { 评审项: "弃用项有通知期 + 调用方监控证据",              结论: 通过 }
-  - { 评审项: "演进策略在提供方/端点层级一致或差异有书面理由", 结论: 通过 }
-  - { 评审项: "版本元数据下游传播已实测（防双重引号/丢失）",   结论: "需后处理校验" }
+evolution_review:                    # 步骤 7（联动 SOP-12 回归验证）
+  - { item: "每个破坏性变更有 major 提升 + 迁移计划",                verdict: PASS }
+  - { item: "弃用项有通知期 + 调用方监控证据",                        verdict: PASS }
+  - { item: "演进策略在 provider / endpoint 层级一致或差异有书面理由", verdict: PASS }
+  - { item: "版本元数据下游传播已实测（防双重引号 / 丢失）",           verdict: NEEDS_POSTPROCESS_CHECK }
 ```
 
 ## 技术交付物
@@ -191,12 +246,13 @@ api: OrderManagementAPI
 - MAP 演进模式官方页（模式映射依据，实测 evolution 组仅 7 个已发布模式）：[Evolution 索引](https://microservice-api-patterns.org/patterns/evolution/)、[Semantic Versioning](https://microservice-api-patterns.org/patterns/evolution/SemanticVersioning.html)、[Version Identifier](https://microservice-api-patterns.org/patterns/evolution/VersionIdentifier.html)、[Two in Production](https://microservice-api-patterns.org/patterns/evolution/TwoInProduction.html)、[Aggressive Obsolescence](https://microservice-api-patterns.org/patterns/evolution/AggressiveObsolescence.html)、[Experimental Preview](https://microservice-api-patterns.org/patterns/evolution/ExperimentalPreview.html)、[Limited Lifetime Guarantee](https://microservice-api-patterns.org/patterns/evolution/LimitedLifetimeGuarantee.html)、[Eternal Lifetime Guarantee](https://microservice-api-patterns.org/patterns/evolution/EternalLifetimeGuarantee.html)（注：Version Arrow、Aggressively Communicate Version 两页实测未发布）
 - 一手源码：仓库 `Microservice-API-Patterns/MDSL-Specification`（master 分支，实测 HEAD `9da0bac0e6133b8a69131925e38bc98e63e20af2`，2025-01-23）；官方语法文件——版本号定义 #L66、演进策略枚举 #L653-L658、端点契约/操作版本位 #L233-L272、版本标识符构造型 #L187-L201、Provider/EndpointInstance #L436-L457；OpenAPI 转换器（版本传播与引号 Bug）`MDSL2OpenAPIConverter.java` #L62/#L131-L133
 - 官方示例 `.mdsl`：`CRMServiceContract.mdsl`（三层版本号）、`ProviderSLAClientExample.mdsl`（治理三级挂载）、`Skeleton.mdsl` / `CRMFromGitPages.mdsl`（版本占位符模板）；`changelog.md`（版本演进史）
+- 使用示例的语法基准：主源 §4.1「综合示例」——其等价结构（全部 5 种 `SLAType`、全部 7 种 `EvolutionStrategy`、三级 `version`、`rate plan` 三值、`rate limit` 三分支、LandingZone、provider / client / gateway）已在 CLI v6.0.0 下编译通过（`probe/t1_all_sla_types.mdsl`）。本次改写略去 SLA 模板、只保留版本与演进相关子句，并添加中文步骤注释；原 YAML 的中文键改为英文字段并拆成 6 段记录（`version_register` / `evolution_strategy_consistency` / `breaking_change_impact` / `deprecation_schedule` / `payload_version_marker` / `evolution_review`），其中弃用时间表与评审记录属**语言无法表达的带外机制**
 
 ---
 <details>
 <summary>📎 原始 MDSL 语法参考（Versioning & Evolution）— 点击展开</summary>
 
-以下片段忠实摘自语料原文（《MDSL - SLA 与版本演进（Versioning & Evolution）语法调研》），供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考。每一非空行与源文件逐字一致（空白归一化）；语料原有 typo 保留。
+以下片段忠实摘自语料原文（《MDSL - SLA 与版本演进（Versioning & Evolution）语法调研》），供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考。每一非空行与源文件逐字一致（空白归一化）；语料原有 typo 保留。上方「使用示例」的 MDSL 段以主源 §4.1 那份经 CLI v6.0.0 实测编译通过的综合示例为基准（略去 SLA 模板以聚焦版本与演进）；摘录按约定保留——§3.3 示例六（多层级版本号）与 §3.6 示例八（治理三级挂载）是示例各段的直接依据。两条实测约束已写入示例注释：`under conditions` 与 `with provider SLA` 互斥；`API gateway` 的 `evolution governance` 必须写在 `consumes` 之后。
 
 **① 版本号定义（L66）——语义化版本标识符就是一个 STRING（格式不由语言校验）**：
 
