@@ -72,21 +72,45 @@
 | 促进价值（and that … is promoted） | data privacy（数据隐私） |
 | 受损价值（accepting that … are harmed） | accountability and auditability（可问责与可审计性） |
 
-**示例 2 — 价值登记册（同日达购物场景，第 2 步形态）**：
+**示例 2 — 价值登记册（同日达购物场景，第 2 步形态；含第 1 步的干系人声明，因为价值簇下的 `Stakeholder` 是引用而非声明）**：
 
-```yaml
-ValueRegister: SDD_Stakeholder_Values（面向 Online_Shop_Same_Day_Delivery）
-  Value Privacy:
-    核心价值: 是（isCore）
-    示例化:
-      - "right to be left alone"
-      - "the right to refuse sharing private data"
-    关联价值: Intimacy
-    对立价值: [Transparency, Inclusiveness]
-  ValueCluster Privacy:
-    核心类别: PRIVACY
-    Value Confidentiality: { 示例化: "right to be left alone" }
-    Stakeholder Customers_and_Shoppers:   # 登记价值对该干系人的影响
+```cml
+// 第 1 步：干系人从故事角色导出，作用域绑定限界上下文
+BoundedContext Online_Shop_Same_Day_Delivery
+
+Stakeholders of Online_Shop_Same_Day_Delivery {
+	Stakeholder Customers_and_Shoppers {
+		description = "Is using the online shop to buy everyday goods."
+		influence = MEDIUM      // UNDEFINED | HIGH | MEDIUM | LOW
+		interest = HIGH
+	}
+}
+
+// 第 2 步：价值登记册（IEEE 7000 术语）——价值条目 + 价值簇 + 干系人–价值关系
+ValueRegister SDD_Stakeholder_Values for Online_Shop_Same_Day_Delivery {
+	Value Privacy {
+		isCore                                          // 核心价值标记
+
+		demonstrator = "right to be left alone"          // 示例化：把价值落为可判断陈述
+		demonstrator = "the right to refuse sharing private data"
+		relatedValue = "Intimacy"                        // 关联价值
+		opposingValue = "Transparency"                   // 对立价值：显式登记价值张力
+		opposingValue = "Inclusiveness"
+	}
+
+	ValueCluster PrivacyCluster {
+		core PRIVACY                                     // 簇的核心价值类别（CoreValue 枚举，必填）
+
+		Value Confidentiality {
+			demonstrator = "right to be left alone"
+		}
+
+		// ValueElicitation：引用上方已声明的干系人，登记该价值对其影响
+		Stakeholder Customers_and_Shoppers {
+			impact = HIGH                                // 可再声明 priority / consequences
+		}
+	}
+}
 ```
 
 **示例 3 — 干系人组（在线购物场景，第 1 步形态）**：
@@ -137,12 +161,13 @@ ValueRegister: SDD_Stakeholder_Values（面向 Online_Shop_Same_Day_Delivery）
 - CML-Specification §22（干系人语法：容器、三属性、干系人组、限界上下文作用域）、§23（价值登记册语法：IEEE 7000 术语、价值属性、价值簇、干系人–价值关系）、§21（故事估值/ESE 语法）
 - CML-Specification §46.10（v6.12.0，2024-08-30：干系人与价值建模支持发布并稳定，四步工作流的能力组合）
 - 分析报告 F9（VDAD 链：干系人建模 → 价值登记册 → 故事估值 → 两张地图）
+- 语法形态核对（2026-10-10，`ContextMapper/context-mapper-dsl` @ master）：`ContextMappingDSL.xtext` 的 `Stakeholders`（`'of' <BC>` 作用域）、`Stakeholder`（`description` / `influence` / `interest`）、`StakeholderGroup`、`ValueRegister`（`'for' <BC>`；成员为 valueClusters / values / valueEpics / valueNarratives / valueWeightings）、`Value`（`isCore` 布尔标记；`demonstrator` / `relatedValue` / `opposingValue` 均取 STRING，可多条）、`ValueCluster`（`core` **非可选**，取 `CoreValue` 枚举或 STRING）、`ValueElicitation`（`Stakeholder <引用>` + `priority` / `impact` / `consequences`，为引用而非声明）、`StoryValuation`（`and that … is promoted accepting that … are harmed`）；枚举 `INFLUENCE`/`INTEREST`/`PRIORITY`/`IMPACT` = UNDEFINED|HIGH|MEDIUM|LOW，`CoreValue` 13 值（含 PRIVACY / TRANSPARENCY / INCLUSIVENESS / RESPECT / TRUST / FAIRNESS）
 
 ---
 <details>
 <summary>📎 原始语法参考（CML/MDSL）— 点击展开</summary>
 
-以下代码块忠实摘自语料原文，供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考；每段标注来源与用途。
+以下代码块忠实摘自语料原文，供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考；每段标注来源与用途。上方「使用示例 2」已是**原生 CML**（干系人容器 + 价值登记册 + 价值簇 + ValueElicitation），与下方 §22/§23 摘录同形；摘录按约定保留。两处需注意：① 摘录中 `ValueCluster Privacy` 与 `Value Privacy` 分属两段独立示例，合并进同一登记册时同名易混，使用示例已将簇改名为 `PrivacyCluster`；② `ValueCluster` 内的 `Stakeholder X { … }` 属 `ValueElicitation` 规则，是**对已声明干系人的引用**，摘录未给出其 `Stakeholders` 容器声明，单独拷贝会悬空。
 
 **CML 故事估值/ESE（CML-Specification §21，第 3 步估值段语法：and that … is promoted / accepting that … are harmed）**：
 
