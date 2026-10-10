@@ -78,7 +78,7 @@
 
 ## 使用示例
 
-保险员工管理场景（语料真实案例的中立化呈现）：
+保险员工管理场景（语料真实案例的中立化呈现）。以下两段为**原生 CML**，顺序拼接即为一个完整的 `.cml` 模型（与官方变换测试输出同形；属性赋值的 `=` 可省略，两种写法等价）：
 
 **输入（第 1 步人工精化后的需求四元组）**：
 
@@ -91,38 +91,90 @@
 
 **第 2–3 步推导结果**：
 
-```yaml
-Domain: InsuranceDomain
-  Subdomain: CustomerDomain
-    愿景陈述: >
-      Aims at promoting the following benefit for a Insurance Employee:
-      I am able to manage the customers data and offer them insurance contracts.
-    实体: [Customer, Contract]
-    Service: US1_ExampleService
-      操作: [createCustomer, updateCustomer, offerContract]
+```cml
+// 第 1 步人工产出（与上表一一对应），作为 supports 追溯锚点
+UserStory US1_Example {
+	As an "Insurance Employee" I want to create a "Customer"
+		so that "I am able to manage customer data and offer insurance contracts."
+}
 
-BoundedContext: NewContextFromSubdomains
-  type: FEATURE
-  implements: CustomerDomain
-  愿景陈述: "This Bounded Context realizes the following subdomains: CustomerDomain"
-  聚合: CustomerDomain 聚合（收纳子域的实体与服务）
-  TODO:
-    - 按实体拆分聚合（转 SOP-05 / AR-1）
-    - 为实体补属性与操作
-    - 为服务补操作
+// 第 2 步 Derive Subdomain from User Requirements：按业务对象聚类 → 子域三件套
+Domain InsuranceDomain {
+	domainVisionStatement = "Insurance domain vision statement ..."
+
+	Subdomain CustomerDomain supports US1_Example {
+		type = CORE_DOMAIN    // CORE_DOMAIN | SUPPORTING_DOMAIN | GENERIC_SUBDOMAIN
+		domainVisionStatement = "Aims at promoting the following benefit for a Insurance Employee: I am able to manage the customers data and offer them insurance contracts."
+
+		Entity Customer       // 子域层只做业务建模：只放 Entity，Aggregate 属下一层的 BC
+		Entity Contract
+
+		Service US1_ExampleService {
+			createCustomer;   // 操作以动词命名，由需求的动词–对象对导出
+			updateCustomer;
+			offerContract;
+		}
+	}
+}
+
+// 第 3 步 Derive Bounded Context from Subdomains：FEATURE 型 BC + 初始 Aggregate
+BoundedContext NewContextFromSubdomains implements CustomerDomain {
+	domainVisionStatement = "This Bounded Context realizes the following subdomains: CustomerDomain"
+	type = FEATURE            // FEATURE | APPLICATION | SYSTEM | TEAM
+
+	/* 该 Aggregate 收纳 'CustomerDomain' 子域的实体与服务（骨架级初稿）。
+	 * TODO: 用 AR-1 'Split Aggregate by Entities' 拆分聚合（→ SOP-05）
+	 * TODO: add attributes and operations to the entities
+	 * TODO: add operations to the services
+	 */
+	Aggregate CustomerDomainAggregate {
+		Entity Customer {
+			String customerId key     // 变换自动补上的标识属性
+		}
+		Entity Contract {
+			String contractId key
+		}
+
+		Service US1_ExampleService {
+			boolean createCustomer (@Customer customer);
+			boolean updateCustomer (@Customer customer);
+			String offerContract (@Contract contract);
+		}
+	}
+}
 ```
 
 **第 4 步（可选，前后端分离）**：
 
-```yaml
-ContextMap:
-  contains: [CustomerManagementFrontend, CustomerManagementBackend]
-  关系: CustomerManagementBackend [PL] -> [CF] CustomerManagementFrontend
-    implementationTechnology: "RESTful HTTP"
-    exposedAggregates: CustomerManagementAggregateBackend
-  CustomerManagementBackend:
-    type: SYSTEM
-    implements: CustomerManagement
+```cml
+// 第 4 步 Derive Frontend and Backend Systems：从 FEATURE/APPLICATION 派生 SYSTEM 型 BC
+// 前提：第 3 步的 NewContextFromSubdomains 已按语义重命名为 CustomerManagement
+ContextMap CustomerManagementLandscape {
+	contains CustomerManagementFrontend
+	contains CustomerManagementBackend
+
+	CustomerManagementBackend [PL] -> [CF] CustomerManagementFrontend {
+		implementationTechnology = "RESTful HTTP"
+		exposedAggregates = CustomerManagementAggregateBackend
+	}
+}
+
+BoundedContext CustomerManagementBackend {
+	type = SYSTEM
+	domainVisionStatement = "This Bounded Context realizes the following subdomains: CustomerManagement"
+	implementationTechnology = "Spring Boot"
+
+	// exposedAggregates 引用的是 Aggregate 元素，被暴露的聚合必须真实声明
+	Aggregate CustomerManagementAggregateBackend {
+		Entity Customer {
+			String customerId key
+		}
+	}
+}
+
+BoundedContext CustomerManagementFrontend {
+	type = SYSTEM
+}
 ```
 
 ## 技术交付物
@@ -162,12 +214,14 @@ ContextMap:
 - CML-Specification §6（限界上下文类型：FEATURE/APPLICATION/SYSTEM/TEAM）、§7（域与子域：愿景陈述、类型、supports、子域内实体约束）
 - ICWE 2020 keynote（五阶段管线：User Story → Analysis Model → Design Model → Service Contract → Clients/Servers；Rapid OOAD 定位）
 - 分析报告 F2（五阶段管线）、F5（分解是持续过程）
+- 语法形态核对（2026-10-10，`ContextMapper/context-mapper-dsl` @ master）：`ContextMappingDSL.xtext` 的 ContextMap / BoundedContext / Subdomain / Aggregate / UpstreamDownstreamRelationship / StoryFeature 规则，以及官方变换测试输出 `derive-bc-from-subdomain-test-11-output.cml`（第 3 步产物：`Aggregate <子域名>Aggregate` + 自动补 `key` 标识属性 + 操作补 `boolean op (@Entity e);`）、`derive-frontend-backend-from-feature-test-6-output.cml`（第 4 步产物：`ContextMap { contains … ; A [ PL ] -> [ ACL ] B }` + `BoundedContext X { type SYSTEM }`）
+- 校正记录：§25 摘录中的 `BoundedContext CustomerManagementBackend implements CustomerManagement` 不合语法——`implements` 只接受 `[DomainPart]`（Domain / Subdomain），不接受 BoundedContext；官方第 4 步变换输出对派生出的 SYSTEM 型 BC **不写** `implements`/`realizes`，使用示例据此处理
 
 ---
 <details>
 <summary>📎 原始语法参考（CML/MDSL）— 点击展开</summary>
 
-以下代码块忠实摘自语料原文，供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考；每段标注来源与用途。
+以下代码块忠实摘自语料原文，供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考；每段标注来源与用途。上方「使用示例」的两段已是**完整的原生 CML**（与官方变换测试输出同形，交叉引用在本文件内全部有定义）；此处保留的是 §21/§25 的**原始措辞摘录**，用于对照规范原文与生成器 TODO 注释的字面形式——摘录为片段，其中的交叉引用（如 `supports CreateCustomers`）不保证在本文件内可解析。
 
 **CML 用户故事与用例（CML-Specification §21/§25，第 1 步需求捕获的语法载体）**：
 
