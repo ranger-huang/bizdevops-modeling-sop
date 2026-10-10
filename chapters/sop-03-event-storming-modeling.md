@@ -94,20 +94,36 @@
 
 **应用层流程（含互斥分支）**：
 
-```yaml
-BoundedContext: ClaimsManagement
-  Application:
-    Commands: [SubmitClaim, CheckClaimDocumentation, CheckInsurance, AcceptClaim, RejectClaim]
-    Events: [ClaimSubmitted, ClaimRegistered, AssessmentPerformed, ClaimAccepted, ClaimRejected]
-    Flow ClaimsFlow:
-      - command SubmitClaim emits event ClaimSubmitted
-      - event ClaimSubmitted triggers command CheckClaimDocumentation
-      - command CheckClaimDocumentation emits event ClaimRegistered
-      - event ClaimRegistered triggers command CheckInsurance
-      - command CheckInsurance emits event AssessmentPerformed
-      - event AssessmentPerformed triggers command AcceptClaim X RejectClaim  # 互斥分支
-      - command AcceptClaim emits event ClaimAccepted
-      - command RejectClaim emits event ClaimRejected
+```cml
+BoundedContext ClaimsManagement {
+	Application {
+		// 命令侧：声明可从限界上下文外部调用的命令
+		Command SubmitClaim
+		Command CheckClaimDocumentation
+		Command CheckInsurance
+		Command AcceptClaim
+		Command RejectClaim
+
+		// 对外发布的领域事件
+		Event ClaimSubmitted
+		Event ClaimRegistered
+		Event AssessmentPerformed
+		Event ClaimAccepted
+		Event ClaimRejected
+
+		// 流程串联命令与事件；操作符 X = XOR 互斥其一，+ = 全部（并行），O = 一个或多个（包含）
+		Flow ClaimsFlow {
+			command SubmitClaim emits event ClaimSubmitted
+			event ClaimSubmitted triggers command CheckClaimDocumentation
+			command CheckClaimDocumentation emits event ClaimRegistered
+			event ClaimRegistered triggers command CheckInsurance
+			command CheckInsurance emits event AssessmentPerformed
+			event AssessmentPerformed triggers command AcceptClaim X RejectClaim
+			command AcceptClaim emits event ClaimAccepted
+			command RejectClaim emits event ClaimRejected
+		}
+	}
+}
 ```
 
 **事件溯源视角的状态迁移（同一案例）**：
@@ -115,9 +131,34 @@ BoundedContext: ClaimsManagement
 | 操作 | 读写 | 状态迁移 |
 |------|------|---------|
 | submitClaim | write | `-> OPEN`（初始状态） |
-| checkInsurance | —（无迁移） | |
-| acceptClaim | write | `OPEN -> ACCEPTED` |
-| rejectClaim | write | `OPEN -> REJECTED` |
+| checkInsurance | read-only（无迁移） | |
+| acceptClaim | write | `OPEN -> ACCEPTED*` |
+| rejectClaim | write | `OPEN -> REJECTED*` |
+
+同一内容的原生 CML：`enum` + `aggregateLifecycle` 声明聚合生命周期，写操作以 `: write [ FROM -> TO ]` 标注迁移，`*` 为终态标记（`TargetState: value=[EnumValue] (endState?='*')?`）：
+
+```cml
+// 事件溯源视角：聚合生命周期 + 每个写操作的显式状态迁移（与上表一一对应）
+enum ClaimStates {
+	aggregateLifecycle
+	OPEN, ACCEPTED, REJECTED
+}
+
+Aggregate Claims {
+	Entity Claim {
+		String claimId key
+		String reason4Rejection
+	}
+
+	// 聚合侧操作是应用层 Command 的对应物（流程中亦可用 operation 替代 command 表述）
+	Service ClaimsService {
+		String submitClaim (@Claim claim) : write [ -> OPEN ];              // 初始状态
+		boolean checkInsurance (String claimId) : read-only;                // 只读，无迁移
+		boolean acceptClaim (String claimId) : write [ OPEN -> ACCEPTED* ]; // * = 终态
+		boolean rejectClaim (String claimId) : write [ OPEN -> REJECTED* ];
+	}
+}
+```
 
 ## 技术交付物
 
@@ -159,12 +200,13 @@ BoundedContext: ClaimsManagement
 - CML-Specification §18（聚合生命周期与状态迁移记法全部变体）、§19（战术 DDD：实体/领域事件/命令/服务/仓库）、§20（应用层：命令/事件、流程与操作符、委派、协调）
 - MDSL-Specification §10.2（Event-Driven Service Design：五步工作流、中间语言定位、已知局限声明）
 - ICWE 2020 keynote（事件风暴用于发现领域模型元素；五阶段管线）
+- 语法形态核对（2026-10-10，`ContextMapper/context-mapper-dsl` @ master）：`ContextMappingDSL.xtext` 的 `Application`（commands / events / services / flows / coordinations 五类成员）、`Flow` 与 `FlowStep`（`DomainEventProductionStep` = `command X [delegates to Agg [迁移]] emits event Y`；`CommandInvokationStep` = `event X triggers command A X B`；操作符 `+`/`X`/`O`）、`Coordination`（`BC :: Service :: operation;`）；`TacticDDDLanguage.xtext` 的 `("Command" | "CommandEvent")` 与 `("DomainEvent" | "Event")`（体均可省）、`Enum`（`aggregateLifecycle` 关键字）、`TargetState`（`*` 终态标记）、`ServiceOperation`（`: write [ FROM -> TO ]` / `: read-only`）
 
 ---
 <details>
 <summary>📎 原始语法参考（CML/MDSL）— 点击展开</summary>
 
-以下代码块忠实摘自语料原文，供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考；每段标注来源与用途。
+以下代码块忠实摘自语料原文，供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考；每段标注来源与用途。上方「使用示例」的两段已是**原生 CML**（应用层命令/事件/流程 + 聚合生命周期与状态迁移），与下方 §20 的 Application/Flow 摘录、§18 的生命周期摘录同形——摘录按约定保留，作为语料原文证据。
 
 **CML 领域事件与命令（CML-Specification §19，第 1 步映射的目标语法）**：
 
