@@ -98,7 +98,7 @@
 
 六个流程元素恰好覆盖契约中声明的 3 个 `event type` 与 3 个 `command type`——映射表覆盖率是步骤 3 的自检项（见成功标准第 1、2 条），漏行即漏操作。
 
-**步骤 5：消息路由 / 集成流（MDSL）**
+**步骤 3 + 步骤 5：端点契约与消息路由（MDSL）**
 
 ```mdsl
 API description OrderFulfillmentEventsAPI version "0.1.0"
@@ -108,6 +108,51 @@ data type Shipment { "shipmentNo": ID, "orderId": ID<int>, "status": D<string> }
 
 event type OrderPaid, ShipmentCreated, WarehouseNotified
 command type CreateShipment, NotifyWarehouse, TrackShipment
+
+// ── 步骤 3 产物：端点契约 ─────────────────────────────────────────────────
+// 槽位约束：endpoint type 与 channel 同属 ServiceSpecification 的 contracts 槽位，
+// 必须排在 message broker（providers 槽位）与 flow（orchestrations 槽位）之前。
+// 子句顺序固定：version → supports → serves as → policy → exposes → receives。
+// serves as 多角色用 and 连接、末尾 role 关键字可省；资源角色（ResourceRole）与
+// 操作职责（OperationResponsibility）是两个正交轴，不可互相替代。
+// supports 只接受单个 flow 或 scenario（语法注明多流支持属 future work）——一个端点
+// 参与多条流时，该关系须带外登记。
+endpoint type ShipmentEndpoint
+  supports flow ShipmentFulfillmentFlow
+  serves as OPERATIONAL_DATA_HOLDER and MUTABLE_COLLECTION_RESOURCE
+  exposes
+    operation createShipment with responsibility STATE_CREATION_OPERATION
+      expecting payload Shipment
+      delivering payload "shipmentNo": ID
+      transitions from "NOT_SHIPPED" to "SHIPPED"
+      compensated by cancelShipment        // 前向引用同端点内操作，官方示例同款写法
+    operation trackShipment with responsibility STATE_TRANSITION_OPERATION
+      expecting payload "shipmentNo": ID
+      delivering payload Shipment
+      transitions from "SHIPPED" to "IN_TRANSIT"
+    operation onShipmentCreated with responsibility EVENT_PROCESSOR
+      in NOTIFICATION conversation
+      emitting event ShipmentCreated       // 操作可无 expecting/delivering（语法允许不完整规格）
+    // 补偿操作不是流程元素，故不出现在映射表中，由下方 YAML 过程记录登记
+    operation cancelShipment with responsibility STATE_TRANSITION_OPERATION
+      expecting payload "shipmentNo": ID
+      transitions from "SHIPPED" to "CANCELLED"
+  receives
+    event OrderPaid                        // 启动事件：只声明接收，不派生 Operation
+
+// 仓储侧只处理命令与事件、本文未建模其数据类型，故取 PROCESSING_RESOURCE；
+// 若后续引入库存/通知记录数据类型，应改判为 OPERATIONAL_DATA_HOLDER——角色随模型演进而非一次定死。
+// 并行分支（+）下仓储侧经 command NotifyWarehouse 抵达，不直接 receives OrderPaid。
+endpoint type WarehouseEndpoint
+  supports flow ShipmentFulfillmentFlow
+  serves as PROCESSING_RESOURCE
+  exposes
+    operation notifyWarehouse with responsibility STATE_TRANSITION_OPERATION
+      expecting payload Shipment
+      transitions from "NOTIFICATION_PENDING" to "NOTIFIED"
+    operation onWarehouseNotified with responsibility EVENT_PROCESSOR
+      in NOTIFICATION conversation
+      emitting event WarehouseNotified     // 流终点，无下游 triggers
 
 // 命令通道：点对点 + 死信；消息意图 = COMMAND_MESSAGE
 channel ShipmentCommands of type POINT_TO_POINT
@@ -146,7 +191,9 @@ flow ShipmentFulfillmentFlow type INTEGRATION_FLOW
 
 ```yaml
 event_flow_record:
-  endpoint_channels:                 # 句式：message endpoint <name> uses from <broker>: <channel>, <channel>
+  endpoint_channels:                 # 通道使用属 message endpoint 规则（clients 槽位，排在 message broker 之后），
+                                     # 与契约中的 endpoint type ShipmentEndpoint（contracts 槽位）同名会冲突，故此处带外登记。
+                                     # 若要落成 DSL：另取名字（如 ShipmentConsumer），句式 message endpoint <name> uses from <broker>: <channel>, <channel>
     ShipmentEndpoint: [ShipmentCommands, ShipmentEvents]
   compensation:
     operation: cancelShipment        # createShipment 的业务级撤销，同端点内
@@ -199,13 +246,14 @@ event_flow_record:
 - CML-Specification（站点研究报告）：§39 事件风暴建模（可建模元素清单）、§40 事件溯源与 CQRS 建模
 - 分析报告 §3 SOP-09 草案、§2 F2（五阶段管线）
 - 语法形态核对（2026-10-10，`Microservice-API-Patterns/MDSL-Specification` @ master，`dsl-core/io.mdsl/src/io/mdsl/APIDescription.xtext`）：`ServiceSpecification` 元素顺序（`data type` → `relation type` → `event type` / `command type` → `endpoint type` / `channel` → `SLA template` → `API provider` / `message broker` → `API client` / `message endpoint` → `API gateway` → `flow` → `scenario`）；`ChannelContract`（`'channel' name ('of' 'type' ChannelType,…)? ('delivery' 'guarantee' DeliveryGuarantee)?` + `OneWayChannel` 或 `RequestReplyChannel`）、`ChannelType`（POINT_TO_POINT | PUBLISH_SUBSCRIBE | DATA_TYPE | INVALID_MESSAGE | DEAD_LETTER | GUARANTEED_DELIVERY）、`DeliveryGuarantee`（UNKNOWN | AT_LEAST_ONCE | AT_MOST_ONCE | EXACTLY_ONCE）、`OneWayChannel`（`on path "…"` + `accepts` / `produces` / `accepts and produces` + `message`）、`Message`（`'message' name ('description')? ('delivering'|'expecting') Payload`）、`Payload`（`DataTransferRepresentation ('as' MessageType)?`）、`MessageType`（COMMAND_MESSAGE | EVENT_MESSAGE | DOCUMENT_MESSAGE，即正文的三种消息意图）、`WhereClauses`（MESSAGE_EXPIRES / SEQUENCE_ID / CORRELATION_ID——请求-应答通道的关联标识）、`MessageBroker`（`'message' 'broker' name ('description')? ('exposes' AsyncEndpoint …)+`；`AsyncEndpoint` = `channels at location "…" via protocol <ProtocolBinding>`，`OtherBinding` 含 AMQP / JMS_ActiveMQ / Kafka / MQTT / STOMP / Web_Sockets / SOAP_HTTP / JSON-RPC / Avro_RPC / Thrift）、`MessageEndpoint`（`'message' 'endpoint' name ('of' 'type' …)? ('serves' 'as' …)? 'uses' ('channels:' …)? ('from' <broker> ':' …)?`）、`Orchestration`（`'flow' name ('version')? ('realizes' scenario)? ('type' FlowType)? steps* ('binding' 'to' …)? ('implemented' 'as' FlowTechnology)?`）、`FlowType`（APPLICATION_FLOW | INTEGRATION_FLOW | SERVICE_ORCHESTRATION | API_CALL_SEQUENCING | EVENT_SOURCING）、`OperationResponsibility`（含 EVENT_PROCESSOR / STATE_CREATION_OPERATION / STATE_TRANSITION_OPERATION）
+- 端点声明（`endpoint type`）的写法核对（2026-10-10，同上语法来源 + 官方示例 `examples/CustomerManagementExample.mdsl`、`examples/asyncMDSL/loan-broker-example.mdsl`、`examples/asyncMDSL/hello-world.mdsl`）：`EndpointContract` 子句顺序 `name → version? → supports ('flow'|'scenario')? → serves as ResourceRole ('and' ResourceRole)* 'role'? → SecurityPolicy? → exposes Operation+? → receives Event+?`；`exposes` **只写一次**后接多个 `operation`（`ops+=Operation+`，重复 `exposes` 不合法）；`Operation` 内部顺序 `version? → with responsibility → in <MEP> conversation → expecting → delivering (→ links → reporting) → transitions → emitting → compensated by → protected by`；`StateTransition` = `'from' STRING 'to' STRING`（状态名**必须加引号**，是 STRING 不是 ID）；`compensated by` 的 `undo=[Operation]` 是**交叉引用**，目标操作必须在契约中真实声明（可前向引用同端点内后声明的操作）；`DataTransferRepresentation` = `('headers' …)? 'payload' ElementStructure ('structured as' TypeSystem)?`，`payload` 关键字必需；`ResourceRole` 取值 PROCESSING_RESOURCE | INFORMATION_HOLDER_RESOURCE | OPERATIONAL_DATA_HOLDER | MASTER_DATA_HOLDER | REFERENCE_DATA_HOLDER | DATA_TRANSFER_RESOURCE | LINK_LOOKUP_RESOURCE | STATEFUL_PROCESSING_RESOURCE | STATELESS_PROCESSING_RESOURCE | VALIDATION_RESOURCE | TRANSFORMATION_RESOURCE | COLLECTION_RESOURCE | MUTABLE_COLLECTION_RESOURCE | STRING，其中 `MUTABLE_COLLECTION_RESOURCE` 按语法注释是任何 INFORMATION_HOLDER_RESOURCE 的**次级角色**（故 `OPERATIONAL_DATA_HOLDER and MUTABLE_COLLECTION_RESOURCE` 是文档化组合）；`MessageEndpoint`（`message endpoint`，clients 槽位）与 `EndpointContract`（`endpoint type`，contracts 槽位）是**两条不同规则**，且前者的 `serves as` 用逗号分隔、后者用 `and`；官方 async 示例的顺序实证为 `data type` → `channel` → `message broker` → `message endpoint`，与 contracts → providers → clients 槽位顺序一致
 - 步骤 3 映射表的规则名核对（同上来源与日期）：`FlowStep`（`DomainEventProductionStep` | `CommandInvokationStep` | `CombinedInvocationStep`；**无** `EventEmissionStep` 这一规则）、`CommandInvokation` 与 `EventProduction` 各四种分支规则、`OrchestrationBinding`（`'binding' 'to' (EndpointTypeBinding|ChannelBinding)+ ('implemented' 'as' FlowTechnology)?`）、`StepToEndpointBinding`（`EventToOperationBinding` | `CommandToOperationBinding`）、`StepToChannelBinding`（`EventToMessageBinding` | `CommandToMessageBinding`）、`EndpointContract`（`'endpoint' 'type' name … ('supports' 'flow'|'scenario')? ('serves' 'as' ResourceRole …)? ('exposes' Operation+)? ('receives' Event+)?`）、`Operation`（`with responsibility` / `in <MessageExchangePattern> conversation` / `expecting` / `delivering` / `transitions` / `emitting` / `compensated by` / `protected by`）、`StateTransition`（`'from' STRING 'to' STRING`）、`MessageExchangePattern`（ONE_WAY | REQUEST_REPLY | NOTIFICATION | STRING）、`OperationResponsibility` 完整枚举（COMPUTATION_FUNCTION | STATE_CREATION_OPERATION | RETRIEVAL_OPERATION | STATE_TRANSITION_OPERATION | EVENT_PROCESSOR | BUSINESS_ACTIVITY_PROCESSOR | STATE_REPLACEMENT_OPERATION | STATE_DELETION_OPERATION | STRING）、`ScenarioType`（BUSINESS_API | FRONTEND_INTEGRATION_SCENARIO | BACKEND_INTEGRATION_SCENARIO）
 
 ---
 <details>
 <summary>📎 原始语法参考（CML/MDSL）— 点击展开</summary>
 
-以下片段忠实摘自语料原文，供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考。上方「使用示例」已按 AsyncMDSL 语法写成**一份完整契约**；摘录按约定保留。对照 master 语法有两点需精确理解：① §5 摘录 `triggers command Command1 or Command2` 里的 `or` 属**包含**分支（`InclusiveAlternativeCommandInvokation`：`o | O | or`，一个或多个），互斥分支是 `x | X | xor | alternatively`——不要把 `or` 读成 XOR；② `CommandInvokationStep` 的**事件侧**不支持 `or`/`xor`（语法注释明示），多个事件触发同一命令只能用 `+`/`and`，或拆成多步。
+以下片段忠实摘自语料原文，供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考。上方「使用示例」已按 AsyncMDSL 语法写成**一份完整契约**（含步骤 3 的 `endpoint type` 声明、步骤 5 的通道/代理/集成流）；摘录按约定保留。对照 master 语法有三点需精确理解：① §5 摘录 `triggers command Command1 or Command2` 里的 `or` 属**包含**分支（`InclusiveAlternativeCommandInvokation`：`o | O | or`，一个或多个），互斥分支是 `x | X | xor | alternatively`——不要把 `or` 读成 XOR；② `CommandInvokationStep` 的**事件侧**不支持 `or`/`xor`（语法注释明示），多个事件触发同一命令只能用 `+`/`and`，或拆成多步；③ 消息意图的两种写法不可混用——`as COMMAND_MESSAGE`（全大写枚举 `MessageType`）只在 `channel` 的 `Payload` 规则里合法，端点操作的 `expecting`/`delivering` 接的是 `DataTransferRepresentation`（无 `as MessageType`），要标 EIP 意图得用 `<<Command_Message>>` 前缀（`TypeReference` 的 classifier 位，混合大小写 `EipPattern`）。
 
 **含事件/命令类型的流（MDSL §5 快速参考）**——步骤 1/2 的事件-命令流表示：
 
