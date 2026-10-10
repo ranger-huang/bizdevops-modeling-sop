@@ -81,13 +81,13 @@
 
 ## ⑤ DDD → 服务契约映射（SummerSoC Table 2；→ [SOP-07](chapters/sop-07-domain-driven-service-design.md)）
 
-| DDD 概念 | 契约概念 | 说明 |
+| DDD 概念（CML） | 契约概念（MDSL） | 说明 |
 |---------|---------|------|
-| 上游 Bounded Context | 一份 API 契约 | 一 BC 一服务一契约 |
-| 暴露的聚合 | API 端点 | 每个聚合一个独立端点 |
-| 聚合根实体/服务中的方法 | 操作（operation） | 由根实体或服务的方法派生 |
-| 方法的参数与返回类型 | 数据类型定义 | 被请求/响应消息引用 |
-| 上游 BC / 下游 BC | API 提供方 / API 消费方 | 契约的暴露者与使用者 |
+| Upstream Bounded Context | `API description` + `endpoint type` | 一 BC 一服务一契约 |
+| Exposed Aggregate | `endpoint`（resource） | 每个聚合一个独立端点 |
+| Aggregate Root Entity / Service method | `operation` | 由根实体或服务的方法派生 |
+| Method Parameter & Return Type | `data type` / `data element` | 被 `expecting` / `returning` 消息引用 |
+| Upstream BC / Downstream BC | `API provider` / `API client` | 契约的暴露者与使用者 |
 
 ## ⑥ HTTP 动词 → MAP 操作职责映射（→ SOP-10/11）
 
@@ -117,12 +117,12 @@
 
 | 关注点 | 子句 | 基数/必填 |
 |--------|------|-----------|
-| 质量目标（性能/可用性…） | SLA objective（SLO）+ Landing Zone minimal/target/optimal | ≥1 条；minimal+target 必填 |
-| SLA 类型显式化 | type：NONE/IMPLICIT/INFORMAL/QUALITATIVE/QUANTITATIVE | 可选（实证：未被校验） |
-| 违约处置 | penalty / notification（自由文本） | 可选 |
-| 计费模式 | rate plan：FREEMIUM / SUBSCRIPTION / USAGE_BASED | ≤1 条 |
-| 用量配额 | rate limit：MAX_CALLS / DATA_QUOTA / NONE + within 窗口 | 0..n 条；within 必填（含 NONE） |
-| 跨端点复用 | SLA template 具名 + 引用 | 顶层 0..n |
+| Quality Objective（SLO，性能/可用性…） | `objective` + Landing Zone `minimal`/`target`/`optimal` | ≥1 条（语法 `slos+=SLO+`）；minimal+target 必填 |
+| SLA Type（类型显式化） | `type`：NONE/IMPLICIT/INFORMAL/QUALITATIVE/QUANTITATIVE | 可选（实证：未被校验） |
+| Violation Handling（违约处置） | `penalty` / `notification`（STRING 自由文本） | 可选 |
+| Pricing Plan（计费模式） | `rate plan`：FREEMIUM / SUBSCRIPTION / USAGE_BASED | ≤1 条（语法 `rp=RatePlan?`） |
+| Rate Limit（用量配额） | `rate limit`：MAX_CALLS / DATA_QUOTA / NONE + `within` 窗口 | 0..n 条（语法 `rl+=RateLimit*`）；within 必填（含 NONE） |
+| SLA Reuse（跨端点复用） | `SLA template` 具名 + `with endpoint SLA <name>` / `with provider SLA <name>` 引用 | 顶层 0..n |
 
 **模式间关系**：Pricing Plan 可用 Rate Limit 强制计费档位（一档一 endpoint 实例挂不同 SLA template）；Rate Limit 与 Pricing Plan 细节应写入 SLA。计量执行点：网关旁路计数（请求副本→计数存储）。
 
