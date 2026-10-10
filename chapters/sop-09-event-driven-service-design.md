@@ -36,16 +36,17 @@
 
 ### 步骤 3：推导服务层 API 端点
 
-从流程与聚合推导端点及操作，映射规则：
+从流程与聚合推导端点及操作，映射规则。「流程元素」列使用 MDSL 语法规则名（`FlowStep` 的三种步骤类型及其子规则），不用自然语言描述：
 
-| 流程元素 | 端点产物 | 操作职责（MAP 模式名） |
+| 流程元素（MDSL grammar element） | 端点产物 | 操作职责（MAP 模式名） |
 |----------|----------|------------------------|
-| 流的启动事件 | 端点声明接收该事件 | —（事件入口） |
-| 命令 | 状态创建操作或状态迁移操作，附 from→to 状态声明 | State Creation Operation / State Transition Operation |
-| 事件 | 事件处理操作（通知型），声明其发出的事件 | Event Processor |
+| `Orchestration` (`flow`) start event — `events+` of the leading `CommandInvokationStep` | 新增 `EndpointContract`（`endpoint type`），启动事件写入 `receives`；`exposes` 的操作可后补 | —（事件入口，不派生 `Operation`） |
+| `CommandInvokation` — `command` side: `SingleCommandInvokation` / `ConcurrentCommandInvokation` / `ExclusiveAlternativeCommandInvokation` / `InclusiveAlternativeCommandInvokation` | 派生 `Operation`：`with responsibility …` + `transitions from … to …`（`StateTransition`） | State Creation Operation / State Transition Operation |
+| `EventProduction` — `emits` side of `DomainEventProductionStep` / `CombinedInvocationStep`: `SingleEventProduction` / `MultipleEventProduction` / `ExclusiveAlternativeEventProduction` / `InclusiveAlternativeEventProduction` | 派生 `Operation`：`in NOTIFICATION conversation` + `emitting event …`；该事件同时写入端点 `receives` | Event Processor |
 
 - 一个命令/事件对应一个操作；操作与流程步骤一一可追溯
-- 需要业务级撤销时，在**同一端点内**为操作声明补偿操作（saga 支持）
+- 追溯性由绑定语法承载，不是口头约定：`OrchestrationBinding`（`binding to` → `EndpointTypeBinding` | `ChannelBinding`）下的 `StepToEndpointBinding` = `EventToOperationBinding`（`event E to operation op`）| `CommandToOperationBinding`（`command C to operation op`），两者均可带 `with mediation <DataTransformation>`（`from <DataContract> to <DataContract>`，语法注释标记 experimental）；消息侧对应 `StepToChannelBinding` = `EventToMessageBinding` | `CommandToMessageBinding`（`… to message …`），见步骤 5
+- 需要业务级撤销时，在**同一端点内**为操作声明补偿操作（`compensated by <Operation>`，saga 支持）
 - 命令侧与查询侧操作分离到不同端点（CQRS 场景的结构重构"命令查询分离"见 [SOP-10](sop-10-map-decoration.md)）
 
 ### 步骤 4：派生技术专属契约
@@ -86,12 +87,16 @@
 
 **步骤 3：事件 ↔ 操作映射表**
 
-| 流程元素 | Endpoint | Operation | 职责（OperationResponsibility） | 状态声明 |
+| 流程元素（MDSL flow step） | Endpoint | Operation | 职责（OperationResponsibility） | 状态声明 |
 |---|---|---|---|---|
-| `OrderPaid`（event） | ShipmentEndpoint | （`receives` 声明，无对应 operation） | — | — |
-| `CreateShipment`（command） | ShipmentEndpoint | createShipment | STATE_CREATION_OPERATION | NOT_SHIPPED → SHIPPED |
-| `ShipmentCreated`（event） | ShipmentEndpoint | onShipmentCreated | EVENT_PROCESSOR（通知型） | emits `ShipmentCreated` |
-| `NotifyWarehouse`（command） | WarehouseEndpoint | notifyWarehouse | STATE_TRANSITION_OPERATION | NOTIFICATION_PENDING → NOTIFIED |
+| `event OrderPaid` — start event, `CommandInvokationStep`.`events+` | ShipmentEndpoint | （`receives` 声明，无对应 `Operation`） | — | — |
+| `command CreateShipment` — `SingleCommandInvokation` | ShipmentEndpoint | createShipment | STATE_CREATION_OPERATION | NOT_SHIPPED → SHIPPED |
+| `command NotifyWarehouse` — `ConcurrentCommandInvokation` (`+`/`and`) | WarehouseEndpoint | notifyWarehouse | STATE_TRANSITION_OPERATION | NOTIFICATION_PENDING → NOTIFIED |
+| `event ShipmentCreated` — `DomainEventProductionStep`.`EventProduction` | ShipmentEndpoint | onShipmentCreated | EVENT_PROCESSOR（`in NOTIFICATION conversation`） | `emitting event ShipmentCreated` |
+| `event WarehouseNotified` — `DomainEventProductionStep`.`EventProduction` | WarehouseEndpoint | onWarehouseNotified | EVENT_PROCESSOR（`in NOTIFICATION conversation`） | `emitting event WarehouseNotified`（流终点，无下游 `triggers`） |
+| `command TrackShipment` — `SingleCommandInvokation` | ShipmentEndpoint | trackShipment | STATE_TRANSITION_OPERATION | SHIPPED → IN_TRANSIT（示例状态名，实际取自 [SOP-03](sop-03-event-storming-modeling.md) 的聚合生命周期） |
+
+六个流程元素恰好覆盖契约中声明的 3 个 `event type` 与 3 个 `command type`——映射表覆盖率是步骤 3 的自检项（见成功标准第 1、2 条），漏行即漏操作。
 
 **步骤 5：消息路由 / 集成流（MDSL）**
 
@@ -193,7 +198,8 @@ event_flow_record:
 - MDSL-Specification（站点研究报告）：§10.2 事件驱动服务设计博客摘要（五步流程、中间语言定位、已知局限）；§4.8 编排流（流步骤、并行/汇合、流类型与绑定）；§4.9 异步消息扩展 AsyncMDSL（通道类型、消息代理、消息端点、请求-应答通道）；§5 快速参考（含事件/命令类型的流示例）；§7 变换与重构（流到端点变换）
 - CML-Specification（站点研究报告）：§39 事件风暴建模（可建模元素清单）、§40 事件溯源与 CQRS 建模
 - 分析报告 §3 SOP-09 草案、§2 F2（五阶段管线）
-- 语法形态核对（2026-10-10，`Microservice-API-Patterns/MDSL-Specification` @ master，`APIDescription.xtext`）：`ServiceSpecification` 元素顺序（`data type` → `relation type` → `event type` / `command type` → `endpoint type` / `channel` → `SLA template` → `API provider` / `message broker` → `API client` / `message endpoint` → `API gateway` → `flow` → `scenario`）；`ChannelContract`（`'channel' name ('of' 'type' ChannelType,…)? ('delivery' 'guarantee' DeliveryGuarantee)?` + `OneWayChannel` 或 `RequestReplyChannel`）、`ChannelType`（POINT_TO_POINT | PUBLISH_SUBSCRIBE | DATA_TYPE | INVALID_MESSAGE | DEAD_LETTER | GUARANTEED_DELIVERY）、`DeliveryGuarantee`（UNKNOWN | AT_LEAST_ONCE | AT_MOST_ONCE | EXACTLY_ONCE）、`OneWayChannel`（`on path "…"` + `accepts` / `produces` / `accepts and produces` + `message`）、`Message`（`'message' name ('description')? ('delivering'|'expecting') Payload`）、`Payload`（`DataTransferRepresentation ('as' MessageType)?`）、`MessageType`（COMMAND_MESSAGE | EVENT_MESSAGE | DOCUMENT_MESSAGE，即正文的三种消息意图）、`WhereClauses`（MESSAGE_EXPIRES / SEQUENCE_ID / CORRELATION_ID——请求-应答通道的关联标识）、`MessageBroker`（`'message' 'broker' name ('description')? ('exposes' AsyncEndpoint …)+`；`AsyncEndpoint` = `channels at location "…" via protocol <ProtocolBinding>`，`OtherBinding` 含 AMQP / JMS_ActiveMQ / Kafka / MQTT / STOMP / Web_Sockets / SOAP_HTTP / JSON-RPC / Avro_RPC / Thrift）、`MessageEndpoint`（`'message' 'endpoint' name ('of' 'type' …)? ('serves' 'as' …)? 'uses' ('channels:' …)? ('from' <broker> ':' …)?`）、`Orchestration`（`'flow' name ('version')? ('realizes' scenario)? ('type' FlowType)? steps* ('binding' 'to' …)? ('implemented' 'as' FlowTechnology)?`）、`FlowType`（APPLICATION_FLOW | INTEGRATION_FLOW | SERVICE_ORCHESTRATION | API_CALL_SEQUENCING | EVENT_SOURCING）、`OperationResponsibility`（含 EVENT_PROCESSOR / STATE_CREATION_OPERATION / STATE_TRANSITION_OPERATION）
+- 语法形态核对（2026-10-10，`Microservice-API-Patterns/MDSL-Specification` @ master，`dsl-core/io.mdsl/src/io/mdsl/APIDescription.xtext`）：`ServiceSpecification` 元素顺序（`data type` → `relation type` → `event type` / `command type` → `endpoint type` / `channel` → `SLA template` → `API provider` / `message broker` → `API client` / `message endpoint` → `API gateway` → `flow` → `scenario`）；`ChannelContract`（`'channel' name ('of' 'type' ChannelType,…)? ('delivery' 'guarantee' DeliveryGuarantee)?` + `OneWayChannel` 或 `RequestReplyChannel`）、`ChannelType`（POINT_TO_POINT | PUBLISH_SUBSCRIBE | DATA_TYPE | INVALID_MESSAGE | DEAD_LETTER | GUARANTEED_DELIVERY）、`DeliveryGuarantee`（UNKNOWN | AT_LEAST_ONCE | AT_MOST_ONCE | EXACTLY_ONCE）、`OneWayChannel`（`on path "…"` + `accepts` / `produces` / `accepts and produces` + `message`）、`Message`（`'message' name ('description')? ('delivering'|'expecting') Payload`）、`Payload`（`DataTransferRepresentation ('as' MessageType)?`）、`MessageType`（COMMAND_MESSAGE | EVENT_MESSAGE | DOCUMENT_MESSAGE，即正文的三种消息意图）、`WhereClauses`（MESSAGE_EXPIRES / SEQUENCE_ID / CORRELATION_ID——请求-应答通道的关联标识）、`MessageBroker`（`'message' 'broker' name ('description')? ('exposes' AsyncEndpoint …)+`；`AsyncEndpoint` = `channels at location "…" via protocol <ProtocolBinding>`，`OtherBinding` 含 AMQP / JMS_ActiveMQ / Kafka / MQTT / STOMP / Web_Sockets / SOAP_HTTP / JSON-RPC / Avro_RPC / Thrift）、`MessageEndpoint`（`'message' 'endpoint' name ('of' 'type' …)? ('serves' 'as' …)? 'uses' ('channels:' …)? ('from' <broker> ':' …)?`）、`Orchestration`（`'flow' name ('version')? ('realizes' scenario)? ('type' FlowType)? steps* ('binding' 'to' …)? ('implemented' 'as' FlowTechnology)?`）、`FlowType`（APPLICATION_FLOW | INTEGRATION_FLOW | SERVICE_ORCHESTRATION | API_CALL_SEQUENCING | EVENT_SOURCING）、`OperationResponsibility`（含 EVENT_PROCESSOR / STATE_CREATION_OPERATION / STATE_TRANSITION_OPERATION）
+- 步骤 3 映射表的规则名核对（同上来源与日期）：`FlowStep`（`DomainEventProductionStep` | `CommandInvokationStep` | `CombinedInvocationStep`；**无** `EventEmissionStep` 这一规则）、`CommandInvokation` 与 `EventProduction` 各四种分支规则、`OrchestrationBinding`（`'binding' 'to' (EndpointTypeBinding|ChannelBinding)+ ('implemented' 'as' FlowTechnology)?`）、`StepToEndpointBinding`（`EventToOperationBinding` | `CommandToOperationBinding`）、`StepToChannelBinding`（`EventToMessageBinding` | `CommandToMessageBinding`）、`EndpointContract`（`'endpoint' 'type' name … ('supports' 'flow'|'scenario')? ('serves' 'as' ResourceRole …)? ('exposes' Operation+)? ('receives' Event+)?`）、`Operation`（`with responsibility` / `in <MessageExchangePattern> conversation` / `expecting` / `delivering` / `transitions` / `emitting` / `compensated by` / `protected by`）、`StateTransition`（`'from' STRING 'to' STRING`）、`MessageExchangePattern`（ONE_WAY | REQUEST_REPLY | NOTIFICATION | STRING）、`OperationResponsibility` 完整枚举（COMPUTATION_FUNCTION | STATE_CREATION_OPERATION | RETRIEVAL_OPERATION | STATE_TRANSITION_OPERATION | EVENT_PROCESSOR | BUSINESS_ACTIVITY_PROCESSOR | STATE_REPLACEMENT_OPERATION | STATE_DELETION_OPERATION | STRING）、`ScenarioType`（BUSINESS_API | FRONTEND_INTEGRATION_SCENARIO | BACKEND_INTEGRATION_SCENARIO）
 
 ---
 <details>
@@ -233,7 +239,7 @@ event startProcessCompleted triggers command startProcessCompletedProcessor
 command CRUDSomeBusinessObject emits event CRUDSomeBusinessObjectCompleted
 ```
 
-流步骤类型（§4.8）：组合步骤 `event Event1 triggers command Command1 emits event Event2`；并行分支 `+`（AND）、`o`（OR）、`x`（XOR）；汇合 `event Command1Done + Command2Done trigger command JoinedContinuationCommand`。按 master 语法，`o`/`O`/`or` 是**包含**分支（一个或多个），`x`/`X`/`xor`/`alternatively` 才是互斥。
+流步骤类型（§4.8，括号为 master 语法规则名）：`FlowStep` = `DomainEventProductionStep`（`command C emits event E`）| `CommandInvokationStep`（`event E triggers command C`）| `CombinedInvocationStep`（组合步骤 `event Event1 triggers command Command1 emits event Event2`）。命令侧分支由 `CommandInvokation` 承载：`SingleCommandInvokation`、`ConcurrentCommandInvokation`（`+`/`and`，AND 并行）、`ExclusiveAlternativeCommandInvokation`（`x`/`X`/`xor`/`alternatively`，互斥其一）、`InclusiveAlternativeCommandInvokation`（`o`/`O`/`or`，**包含**——一个或多个，不要读成 XOR）；事件生产侧同构：`SingleEventProduction` / `MultipleEventProduction` / `ExclusiveAlternativeEventProduction` / `InclusiveAlternativeEventProduction`。汇合（join）= `CommandInvokationStep` 事件侧的多事件列表 `event Command1Done + Command2Done trigger command JoinedContinuationCommand`，无独立规则。子流程调用走 `EitherCommandOrOperationInvokation` 的 `'flow' SubProcessInvocation` 分支（`subprocess=[Orchestration]`）；流实现技术用 `implemented as <FlowTechnology>`（APACHE_CAMEL_ROUTE | SPRING_INTEGRATION_FLOW | BPMN_PROCESS | BPEL_PROCESS | YET_ANOTHER_FLOW_LANGUAGE | PLAIN_PROGRAMMING）。
 
 **流到端点变换（MDSL §7）**——步骤 3 推导规则的原始定义：
 
