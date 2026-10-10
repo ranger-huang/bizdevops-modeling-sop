@@ -102,46 +102,62 @@ MAP 语言组织（装饰时按类取用）：表示元素（Representation Elem
 
 ## 使用示例
 
-客户查询端点的装饰记录（工具中立 YAML 风格伪码）：
+客户查询端点的装饰结果（MDSL 契约）+ 模式决策记录：
+
+```mdsl
+API description CustomerAPI version "1.1.0"
+usage context PUBLIC_API for FRONTEND_INTEGRATION
+
+// 步骤 1：表示元素用 IRT 三元组（名称-角色-类型）；<<pattern>> 为结构模式装饰
+data type Address { "street": D<string>, "city": D<string> }
+data type CustomerRepresentation {
+  "customerId": ID<string>,
+  "fullName": D<string>,
+  "lastModified": MD<string>,
+  <<Embedded_Entity>>"address": Address,                  // 决策 DR-1
+  <<Linked_Information_Holder>>"creditHistoryLink": L      // 决策 DR-2
+}
+
+// 步骤 2/3/5：端点角色（主 + 次）+ 操作职责 + 版本
+endpoint type CustomerEndpoint version "1.1.0" serves as INFORMATION_HOLDER_RESOURCE and MASTER_DATA_HOLDER role
+  exposes
+    operation lookupCustomer version "1.1.0" with responsibility RETRIEVAL_OPERATION
+      expecting payload { "customerId": ID<string> }
+      delivering payload CustomerRepresentation
+    operation listCustomers with responsibility RETRIEVAL_OPERATION
+      expecting payload <<Request_Condition>>{ "namePrefix": D<string> }
+      delivering payload <<Pagination>>{ "entries": CustomerRepresentation*, "cursor": ID<string> }   // 决策 DR-3
+
+API provider CustomerProvider version "1.1.0"
+  offers CustomerEndpoint
+  at endpoint location "https://api.example.com/customers" via protocol "RESTful HTTP"
+```
 
 ```yaml
-endpoint: CustomerEndpoint
-  角色: Information Holder Resource — Master Data Holder      # 步骤 2
-  版本: 1.1.0                                                  # 步骤 5
-  operations:
-    - name: lookupCustomer
-      职责: Retrieval Operation                                # 步骤 3
-      绑定校验: GET /customers/{customerId} ✓（动词↔职责一致）
-      request:                                                 # 步骤 1 IRT
-        - { 名称: customerId, 角色: ID, 类型: string }
-      response:
-        - { 名称: customerId,   角色: ID,   类型: int }
-        - { 名称: fullName,     角色: Data, 类型: string }
-        - { 名称: lastModified, 角色: Metadata, 类型: string }
-        - { 名称: address,      模式: Embedded Entity }        # 决策 DR-1
-        - { 名称: creditHistoryLink, 角色: Link,
-            模式: Linked Information Holder }                  # 决策 DR-2
-    - name: listCustomers
-      职责: Retrieval Operation
-      模式: Pagination（游标式）                                # 决策 DR-3
-
-decisionRecords:                                               # 七段模板
-  - id: DR-1
-    pattern: Embedded Entity
-    problem: 订单页面需一次获得客户地址，避免二次往返
-    forces: 性能(+) / 消息体积(-) / 新鲜度(-，随客户主数据变化)
-    solution: 在客户表示中嵌入地址数据元素
-    consequences: 消息变大；地址一致性由提供方在响应组装时保证
-  - id: DR-2
-    pattern: Linked Information Holder
-    problem: 信用历史庞大且多数调用不需要
-    forces: 消息体积(+) / 往返次数(-，需要时多一跳)
-    solution: 添加链接元素指向独立的信用历史端点
-    knownUses: 社交网络公开 API（用户概要 + 详情链接）
-  - id: DR-3
-    pattern: Pagination (cursor-based)
-    forces: 数据集大且变化频繁 → 游标式优于偏移式（避免漂移）
-    consequences: 提供方需管理游标状态
+decoration_record:
+  binding_check:                       # 绑定校验是评审结论，不属契约语法
+    lookupCustomer: "GET /customers/{customerId}"
+    listCustomers:  "GET /customers"
+    verb_responsibility_match: PASS    # ✓ 动词 ↔ 职责一致（Retrieval ↔ GET）
+  pagination_variant: CURSOR_BASED     # <<Pagination>> 无变体槽位，变体登记在此（游标式）
+  decisionRecords:                     # 七段模板：Context / Problem / Forces / Solution / Variants / Consequences / Known Uses
+    - id: DR-1
+      pattern: Embedded_Entity
+      problem: 订单页面需一次获得客户地址，避免二次往返
+      forces: 性能(+) / 消息体积(-) / 新鲜度(-，随客户主数据变化)
+      solution: 在客户表示中嵌入地址数据元素
+      consequences: 消息变大；地址一致性由提供方在响应组装时保证
+    - id: DR-2
+      pattern: Linked_Information_Holder
+      problem: 信用历史庞大且多数调用不需要
+      forces: 消息体积(+) / 往返次数(-，需要时多一跳)
+      solution: 添加链接元素指向独立的信用历史端点
+      knownUses: 社交网络公开 API（用户概要 + 详情链接）
+    - id: DR-3
+      pattern: Pagination
+      variants: cursor-based > offset-based
+      forces: 数据集大且变化频繁 → 游标式优于偏移式（避免漂移）
+      consequences: 提供方需管理游标状态
 ```
 
 ## 技术交付物
@@ -185,12 +201,14 @@ decisionRecords:                                               # 七段模板
 - ICWE 2020 主题演讲（Zimmermann）：Part 3（Embedded Entity / Linked Information Holder 完整模式卡、Pagination 七段示例、神话破除 2/3：HTTP 确认偏误、NIH 综合征）
 - APIace EuroPLoP 2021（Serbout, Pautasso, Zdun, Zimmermann）：§5.2（HTTP 动词 ↔ MAP 职责映射、Computation Function 绑定规则、端点角色 ↔ 结构原语对应）
 - 分析报告 §2 F7、§3 SOP-10 草案
+- 语法形态核对（2026-10-10，`Microservice-API-Patterns/MDSL-Specification` @ master，`APIDescription.xtext`）：`PatternStereotype`（`'<<' (MapPattern | EipPattern | ID) '>>'`）、`MapPattern` 枚举（API_Key / Context_Representation / Error_Report / Request_Bundle / Request_Condition / Wish_List / Wish_Template / Embedded_Entity / Linked_Information_Holder / Annotated_Parameter_Collection / Pagination / Data_Element / Identifier_Element / Id_Element / Link_Element / Metadata_Element / Control_Metadata / Aggregated_Metadata / Provenance_Metadata / Command / Response_Bundle / Version_Identifier，末尾 `| STRING`）、`EipPattern`（Command_Message / Document_Message / Event_Message）、`ParameterRole`（D / MD / ID / L / Data / Metadata / Identifier / Link）、`BasicDataType`（bool / int / long / double / string / raw / void）、`EndpointContract` 的 `serves as <ResourceRole> (and <ResourceRole>)* role?`、`Operation` 的 `with responsibility <OperationResponsibility>`；官方 `examples/examples-advanced/MAPDecoratorUsageReference.mdsl` 提供装饰器与 IRT 三元组的实例写法
+- 校正记录：原示例中 `customerId` 在 request 记为 `string`、在 response 记为 `int`，同一表示元素出现两种类型；已统一为 `ID<string>`
 
 ---
 <details>
 <summary>📎 原始语法参考（CML/MDSL）— 点击展开</summary>
 
-以下片段忠实摘自语料原文，供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考。
+以下片段忠实摘自语料原文，供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考。上方「使用示例」已按这些语法写成**一份带 MAP 装饰的完整契约**；摘录按约定保留。装饰器名以 `MapPattern` 枚举为准（`Embedded_Entity` / `Linked_Information_Holder` / `Pagination` / `Wish_List` / `Error_Report` 等，下划线连写）；该枚举末尾还有 `| STRING` 分支，所以语料里出现的小写 `<<error_report>>` 同样能解析，但规范名是 `Error_Report`。
 
 **MAP 模式类别与装饰位置（MDSL §3）**：
 
