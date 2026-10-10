@@ -22,8 +22,14 @@
 
 检查故事的标准形态，锁定动词槽位：
 
-```text
-As a "<角色>" I want to "<动词>" an "<对象>" so that "<收益>"
+```cml
+// 标准形态模板（尖括号占位符替换后即为可解析的 UserStory；As a / As an 均合法）
+// verb 属 UserActivityDefaultVerb（create | read | update | delete）时可不加引号
+UserStory <StoryName> {
+	As a "<role>"
+	I want to "<verb>" an "<entity>" with its "<attribute>", "<attribute>" for a "<containerEntity>"
+	so that "<benefit>"
+}
 ```
 
 复合动词是拆分信号：一个动词槽位对应多个可独立发生、独立验收的业务动作时，即触发拆分。
@@ -80,19 +86,20 @@ As a "<角色>" I want to "<动词>" an "<对象>" so that "<收益>"
 
 **拆分结果（按动词 create / edit / cancel）**：
 
-```yaml
-原故事: Account_Admin_Story
-  处置: 保留，作为追溯锚点
-  反向引用: split by Account_Admin_Story_Split   # 指向子故事集
-  文本: As an "Admin" I want to "manage" an "Account" so that "can enable users to work with the system."
+```cml
+// 原故事保留作追溯锚点；split by 提供指向子故事（集）的反向引用
+UserStory Account_Admin_Story split by Account_Admin_Story_Split {
+	As an "Admin" I want to "manage" an "Account" so that "can enable users to work with the system."
+}
 
-子故事集: Account_Admin_Story_Split
-  文本: |
-    As an "Admin"
-    I want to "cancel" an "Account"
-    I want to "edit" an "Account"
-    I want to create an "Account"
-    so that "can enable users to work with the system."
+// 子故事集：继承角色/对象/收益，仅动词槽位替换为原子动词
+UserStory Account_Admin_Story_Split {
+	As an "Admin"
+	I want to "cancel" an "Account"
+	I want to "edit" an "Account"
+	I want to create an "Account"   // create 属 UserActivityDefaultVerb，可不加引号
+	so that "can enable users to work with the system."
+}
 ```
 
 **追溯矩阵（第 5 步校验用）**：
@@ -137,12 +144,13 @@ As a "<角色>" I want to "<动词>" an "<对象>" so that "<收益>"
 - CML-Specification §21（用户故事语法：多 "I want to" 行的故事集形态）
 - DPR.md（story splitting 方法元素，2020-12 收录；方法工程三规则：上下文至上、有疑就删、目的高于合规）
 - ICWE 2020 keynote（用户故事作为敏捷实践入口；业务分析师的故事模板——自然但精确的统一语言描述）
+- 语法形态核对（2026-10-10，`ContextMapper/context-mapper-dsl` @ master）：`ContextMappingDSL.xtext` 的 `UserStory`（`'UserStory' name=ID ('split by' splittingStory=[UserStory])?`——反向引用挂在原故事侧）、`StoryFeature`（`'I want to' verb (a|an|the)? entity ('with its' 属性列表)? ('in'|'for'|'to' (a|an)? 容器实体)?`，多行 `I want to` 即多 Feature）、`UserActivityDefaultVerb`（`create|read|update|delete`，可不加引号；其余动词须写成 STRING）
 
 ---
 <details>
 <summary>📎 原始语法参考（CML/MDSL）— 点击展开</summary>
 
-以下代码块忠实摘自语料原文，供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考；每段标注来源与用途。
+以下代码块忠实摘自语料原文，供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考；每段标注来源与用途。上方「使用示例」已是**原生 CML**，与下方 §26「拆分后的结果」摘录同形——摘录按约定保留，作为语料原文证据；`split by` 反向引用挂在**原故事**侧，以语法为准。
 
 **CML 拆分前的用户故事（CML-Specification §26，输入形态）**：
 
