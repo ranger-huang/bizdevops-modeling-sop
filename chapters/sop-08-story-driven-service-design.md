@@ -88,53 +88,71 @@
 
 ## 使用示例
 
-订单履约 API 的最小推导（工具中立结构化模板）：
+订单履约 API 的最小推导。以 MDSL 作为抽象契约语言的代表载体（方法本身工具中立）：步骤 1–4 合成**一份完整契约**，步骤 4 的资源路径/动词映射与步骤 5–7 另以走查记录承载。
+
+注意 `ServiceSpecification` 的元素顺序是**强制的**：`API description` → `data type` → `relation type` → `event type` / `command type` → `endpoint type` → `SLA template` → `API provider` → `API client` → `API gateway` → `flow` → `scenario`。因此集成故事（步骤 1）在文件里位于**末尾**，与七步的执行顺序相反：
+
+```mdsl
+API description OrderFulfillmentAPI version "0.1.0"
+usage context SOLUTION_INTERNAL_API for BACKEND_INTEGRATION
+
+// 步骤 2：数据契约（渐进精化；P = 占位符，ID/D = MAP 元素刻板印象）
+data type Shipment { "shipmentNo": ID, "orderId": ID<int>, "status": D<string>, "items": P }
+data type ShipmentId P
+data type OrderId ID<int>
+data type CreateShipmentRequest { "orderId": ID<int>, "items": P }
+
+// 步骤 3：端点与操作（每操作可追溯到来源故事 = API-first 理由链）
+endpoint type ShipmentEndpoint version "0.1.0"
+  exposes
+    operation createShipment version "0.1.0" with responsibility STATE_CREATION_OPERATION
+      expecting payload CreateShipmentRequest        // ← S1（动词：创建）
+      delivering payload ShipmentId
+    operation lookupShipmentByOrder with responsibility RETRIEVAL_OPERATION
+      expecting payload OrderId                      // ← S2（动词：查询）
+      delivering payload Shipment                    // 字段选择 <<Wish_List>> 待评估（装饰在表示元素上，见 SOP-10）
+
+// 步骤 4：提供方与协议绑定
+API provider OrderFulfillmentProvider version "0.1.0"
+  offers ShipmentEndpoint
+  at endpoint location "https://fulfillment.example.com/shipments" via protocol HTTP
+
+API client OrderFulfillmentConsumer
+  consumes ShipmentEndpoint
+API client CustomerServiceFrontend
+  consumes ShipmentEndpoint
+
+// 步骤 1：集成故事（语法上位于 ServiceSpecification 末尾；官方标注 experimental preview）
+scenario OrderFulfillmentIntegration type BACKEND_INTEGRATION_SCENARIO
+  story S1 type USER_STORY
+    when "an order has been paid"
+    a "Order Fulfillment System"
+    wants to "create a shipment for an order"
+    yielding "shipment number"
+    so that "shipping status can be tracked"
+  story S2 type TEST_CASE
+    a "Customer Service Frontend"
+    wants to "look up shipment status by order id"
+    yielding "shipment with status and item links"
+    so that "customer inquiries can be answered"
+```
+
+`wants to` 之后只能接 STRING 或 `ActionKeyword`（`CRUD` / `CRUDSF` / `CQRS`）——语法注释明确指出 `create` 这类词会破坏操作命名，故此处用自由文本；紧凑记法形态见折叠段 §4.7 的 `a API client wants to CRUD "SomeBusinessObject"`。
 
 ```yaml
-# 步骤 1：集成故事
-scenario: 订单履约集成（类型: 后端集成场景）
-  stories:
-    - id: S1  类型: 用户故事
-      when: "订单已支付"
-      角色: "订单履约系统（消费方）"
-      动作: "为订单创建发货单"
-      产出: "发货单号"
-      目标: "物流状态可被跟踪"
-    - id: S2  类型: 测试用例
-      角色: "客服前台（消费方）"
-      动作: "按订单号查询发货状态"
-      产出: "发货单（含状态与明细链接）"
-      目标: "回答客户咨询"
-
-# 步骤 2：数据契约（占位符 = 待精化）
-dataTypes:
-  Shipment:
-    shipmentNo: 标识符元素        # 类型待定 → 占位
-    orderId:    标识符元素<int>
-    status:     数据元素<string>
-    items:      占位符            # 结构未定，登记精化计划
-
-# 步骤 3：操作清单（每操作标注来源故事 = 理由链）
-endpoint: ShipmentEndpoint
-  operations:
-    - createShipment         # ← S1（动词: 创建）
-    - lookupShipmentByOrder  # ← S2（动词: 查询）
-      变换: [字段选择（Wish List）待评估]
-
-# 步骤 4：绑定与治理
-binding: HTTP
-  resources:
-    - "/shipments":            { createShipment: POST }
-    - "/shipments/{orderId}":  { lookupShipmentByOrder: GET }
-governance:
-  version: 0.1.0（端点与操作各自带版本）
-  errorReport: { code: int, message: string } → 4xx/5xx 状态码
-  sla: 草案（评审时与消费方确认）
-
-# 步骤 5–7
-review:   消费方签核 [ ] 待完成（S2 作为验收标准草案）
-derive:   OpenAPI 3.x [ ] / gRPC IDL [ ]（按需）
-accept:   S1、S2 → 验收测试用例 [ ]
+pipeline_record:
+  step4_resource_binding:            # MDSL 只表达 location + protocol；路径/动词映射属绑定细节
+    protocol: HTTP
+    resources:
+      "/shipments":           { createShipment: POST }
+      "/shipments/{orderId}": { lookupShipmentByOrder: GET }
+  governance:
+    version: "0.1.0"                              # 端点与操作各自带版本
+    error_report: { code: int, message: string }  # → 4xx/5xx 状态码
+    sla: DRAFT                                    # 评审时与消费方确认（→ SOP-14）
+  step5_review: { consumer_signoff: PENDING }      # S2 作为验收标准草案
+  step6_derive: { openapi: PENDING, grpc_proto: OPTIONAL }
+  step7_accept: { acceptance_tests_from: [S1, S2], status: PENDING }
 ```
 
 ## 技术交付物
@@ -182,12 +200,13 @@ accept:   S1、S2 → 验收测试用例 [ ]
 - MDSL-Specification（站点研究报告）：§10.1 故事驱动服务设计博客摘要（七步流程、"操作因故事而引入"的 API-first 理由链、优势与代价）；§4.7 集成场景与故事（故事语法、故事/场景类型、CRUD 紧凑记法）；§2 设计目标（敏捷建模、契约优先、多语集成）；§4.6 协议绑定（HTTP 绑定规则）；§7 变换与重构（分析变换、模式引入变换、数据类型变换、变换链）
 - ICWE 2020 主题演讲（Zimmermann）：Part 1/2 神话破除（技术优先、HTTP 确认偏误）、Contracts rule、治理信息（SLA/版本）
 - 分析报告 §3 SOP-08 草案、§5 原则 6（部分规格支持敏捷建模）/原则 12（无故事不操作）
+- 语法形态核对（2026-10-10，`Microservice-API-Patterns/MDSL-Specification` @ master，`APIDescription.xtext`）：`ServiceSpecification` 的**强制元素顺序**（`types` → `links` → `events`/`commands` → `contracts` → `slas` → `providers` → `clients` → `gateways` → `orchestrations` → `realizations` → `scenarios`，其中 `scenario`/`flow`/`gateway` 标注 experimental preview）；`IntegrationScenario`（`'scenario' name ('type' ScenarioType)? ('version')? stories*`）、`IntegrationStory`（`when` / `a|an|the <client>|API client` / `wants to <Action> <StoryObject>*` / `yielding` / `so that`）、`Action`（STRING 或 `ActionKeyword` = CRUD|CRUDSF|CQRS，语法注释指出 `create` 等词会破坏操作命名）、`StoryObject`（可选介词 with/against/for/at/in/to/on/from/and/into/within/via + 可选冠词 a/an/the/its + STRING）、`StoryType`（USER_STORY|JOB_STORY|TEST_CASE|API_MOCK）、`ScenarioType`（BUSINESS_API|FRONTEND_INTEGRATION_SCENARIO|BACKEND_INTEGRATION_SCENARIO）；`EndpointContract` 的 `serves as … role`、`Operation` 的 `with responsibility …`；官方 `examples/examples-advanced/MAPDecoratorUsageReference.mdsl` 的 IRT 写法（`"someID":ID*`、`"someData":D`、`{{P}}`、`data type X P`）
 
 ---
 <details>
 <summary>📎 原始语法参考（CML/MDSL）— 点击展开</summary>
 
-以下片段忠实摘自语料原文，供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考。
+以下片段忠实摘自语料原文，供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考。上方「使用示例」已按这些语法写成**一份完整契约**；摘录按约定保留——§4.7 的 `scenario`/`story` 示例与 `IntegrationStory` 语法定义是该段的直接依据。一处版本差异：摘录的 `IntegrationStory` 比 master 分支少了 `('version' svi=SemanticVersioningIdentifier)?` 位（语料版本较早），版本号在 `story` 与 `scenario` 上均为可选。
 
 **集成场景与故事（MDSL §4.7 示例）**——步骤 1 的故事结构在抽象契约语言中的表示：
 
