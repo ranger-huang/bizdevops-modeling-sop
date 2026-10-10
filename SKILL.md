@@ -1,6 +1,6 @@
 ---
 name: bizdevops-modeling-sop
-description: "BizDevOps 领域建模与服务设计 SOP 手册：15 个 SOP（何时启用/触发条件/步骤/交付物/成功标准）+ 综合速查表。覆盖快速 OOAD、故事拆分、事件风暴建模（ES/CQRS）、VDAD 价值建模、架构重构 AR-1~11、系统化服务分解、领域/故事/事件驱动服务设计、MAP 模式装饰、存量 API 分析、质量治理（SLA/Rate Limit/Pricing Plan）、版本演进（Versioning & Evolution）、模型-代码一致性验证、方法工程（DPR）。当用户进行 DDD 建模、微服务拆分、上下文映射、API 契约设计、事件风暴、API 治理、质量/计费/限流声明、版本与弃用管理或架构演进决策时使用。工具中立方法论，不绑定 IDE/生成器。"
+description: "BizDevOps 领域建模与服务设计 SOP 手册：15 个 SOP（何时启用/触发条件/步骤/交付物/成功标准）+ 综合速查表。覆盖快速 OOAD、故事拆分、事件风暴建模（ES/CQRS）、VDAD 价值建模、架构重构 AR-1~11、系统化服务分解、领域/故事/事件驱动服务设计、MAP 模式装饰、存量 API 分析、质量治理（SLA/Rate Limit/Pricing Plan）、版本演进（Versioning & Evolution）、模型-代码一致性验证、方法工程（DPR）。随仓库版本化留档 CML / MDSL 官方语法文件（dsl/cml、dsl/mdsl + 规则索引 + 版本账本），深度语法检查就地取证、无需下载上游仓库。当用户进行 DDD 建模、微服务拆分、上下文映射、API 契约设计、事件风暴、API 治理、质量/计费/限流声明、版本与弃用管理、架构演进决策，或需要核对 CML/MDSL 语法形态与枚举取值域时使用。工具中立方法论，不绑定 IDE/生成器。"
 ---
 
 <!-- argument-hint: [SOP 编号、主题词或场景描述] -->
@@ -14,8 +14,9 @@ description: "BizDevOps 领域建模与服务设计 SOP 手册：15 个 SOP（�
 - **带场景**（"单体拆分"、"契约评审"）→ 按 [cheatsheet.md](cheatsheet.md) 决策树路由到 SOP，读对应章节文件，按五要素执行
 - **带编号/主题**（`SOP-05`、"分页怎么选"）→ 直接读 `chapters/sop-*.md` 或 [patterns.md](patterns.md)
 - **多 SOP 场景** → 按下方总流程与编排路线串联；一次只加载需要的章节文件
+- **深度语法检查**（这段 CML/MDSL 能不能这么写、枚举取值域、子句顺序、行号依据）→ 走 [dsl/README.md](dsl/README.md)：先查 `dsl/<cml|mdsl>/grammar-index.md` 定位规则行区间，再用 `read` 带 `offset`/`limit` 精读本地 `.xtext`。**不要下载/解压上游仓库，也不要读临时目录里的副本**
 
-SOP 文件固定结构：何时启用 → 触发条件 → 完整步骤 → 使用示例 → 技术交付物 → 成功标准 → 反模式 → 关联 → 来源；文末附原始 CML/MDSL 语法折叠段（供对接 BCM 的 CUE 元模型）。
+SOP 文件固定结构：何时启用 → 触发条件 → 完整步骤 → 使用示例 → 技术交付物 → 成功标准 → 反模式 → 关联 → 来源；文末附原始 CML/MDSL 语法折叠段（语料原文摘录，供对接 BCM 的 CUE 元模型）——语法形态争议一律以 [dsl/](dsl/README.md) 的官方语法文件为准。
 
 ## SOP 总流程（BizDevOps 愿景）
 
@@ -98,11 +99,12 @@ SOP 文件固定结构：何时启用 → 触发条件 → 完整步骤 → 使�
 - [cheatsheet.md](cheatsheet.md) — 速查表完整版 + 场景→SOP 决策树 + 原则/反模式速查
 - [patterns.md](patterns.md) — 决策规则库：AR 目录、耦合准则、MAP 速查、P1–P4 判定、坏味道修正、DDD→契约映射、质量治理与版本演进规则、神话破除表
 - [glossary.md](glossary.md) — 术语双语对照表
+- [dsl/README.md](dsl/README.md) — 随仓库版本化的 **CML / MDSL 官方语法文件**（`dsl/cml/`、`dsl/mdsl/`）+ 规则索引（规则名→行区间）+ 版本账本 [dsl/VERSIONS.md](dsl/VERSIONS.md)（pin commit / blob sha1 / sha256）；深度语法检查的第一手依据，`python3 dsl/sync.py --check` 校验是否落后上游
 
 ## 范围与边界
 
 - **工具中立方法论手册**：不含 IDE 插件/生成器/CLI 命令；落地时结合项目自身的建模语言与校验工具
-- 原始 CML/MDSL 语法仅在各 SOP 文末折叠段，用于对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型
+- 原始 CML/MDSL 语法有两处：**权威副本**在 [dsl/](dsl/README.md)（上游 `.xtext` 逐字节留档 + 规则索引 + pin commit 账本，`python3 dsl/sync.py` 维护最新）；各 SOP 文末折叠段是**语料原文摘录**，用于对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型与追溯措辞来源。两者冲突以 `dsl/` 为准
 - 排除：Context Mapper Generators（官方文档 §32–38）、JHipster 教程、工具安装配置
 - 稳定性提示：故事拆分在源文档中为 PoC（仅按动词拆分）；耦合准则目录源自已停用工具，方法学仍有效——按 SOP-13 三规则自行裁剪
 - 质量/版本子句的表达力实证边界（测量值仅整数、无 deprecated/sunset 语法、金额与客户端差异化配额不可表达等）见 sop-14/15 与 patterns.md⑧⑨；不可表达部分一律带外治理

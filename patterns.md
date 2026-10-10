@@ -1,6 +1,8 @@
 # Patterns — 决策规则库
 
 > 紧凑速查表；展开步骤 → 对应 SOP 章节。素材来源：CML §28/§30、SummerSoC 2020（DC/Table 2/Fig.6）、MDSL §3/§4、APIace EuroPLoP 2021、ICWE 2020 主题演讲。
+>
+> 本表的语法形态断言（如 `slos+=SLO+`、`rp=RatePlan?`、枚举取值域）以 [dsl/](dsl/README.md) 内留档的官方语法文件为准：规则名→行区间查 `dsl/<cml|mdsl>/grammar-index.md`，再精读对应 `.xtext`。
 
 ## ① 架构重构（AR）目录（→ [SOP-05](chapters/sop-05-architectural-refactorings.md)）
 

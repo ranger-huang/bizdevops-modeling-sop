@@ -144,7 +144,7 @@ UserStory Account_Admin_Story_Split {
 - CML-Specification §21（用户故事语法：多 "I want to" 行的故事集形态）
 - DPR.md（story splitting 方法元素，2020-12 收录；方法工程三规则：上下文至上、有疑就删、目的高于合规）
 - ICWE 2020 keynote（用户故事作为敏捷实践入口；业务分析师的故事模板——自然但精确的统一语言描述）
-- 语法形态核对（2026-10-10，`ContextMapper/context-mapper-dsl` @ master）：`ContextMappingDSL.xtext` 的 `UserStory`（`'UserStory' name=ID ('split by' splittingStory=[UserStory])?`——反向引用挂在原故事侧）、`StoryFeature`（`'I want to' verb (a|an|the)? entity ('with its' 属性列表)? ('in'|'for'|'to' (a|an)? 容器实体)?`，多行 `I want to` 即多 Feature）、`UserActivityDefaultVerb`（`create|read|update|delete`，可不加引号；其余动词须写成 STRING）
+- 语法形态核对（2026-10-10，`ContextMapper/context-mapper-dsl` @ master）：`ContextMappingDSL.xtext` 的 `UserStory`（`'UserStory' name=ID ('split by' splittingStory=[UserStory])?`——反向引用挂在原故事侧）、`StoryFeature`（`'I want to' verb (a|an|the)? entity ('with its' 属性列表)? ('in'|'for'|'to' (a|an)? 容器实体)?`，多行 `I want to` 即多 Feature）、`UserActivityDefaultVerb`（`create|read|update|delete`，可不加引号；其余动词须写成 STRING）（深度语法核对改读仓库内权威副本：CML `../dsl/cml/ContextMappingDSL.xtext` + `../dsl/cml/TacticDDDLanguage.xtext`，规则名→行区间查对应 `grammar-index.md`，pin commit 与 sha256 见 `../dsl/VERSIONS.md`），不再下载/解压上游仓库或读临时副本
 
 ---
 <details>

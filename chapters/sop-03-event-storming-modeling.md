@@ -198,7 +198,7 @@ BoundedContext ClaimsManagement {
 - CML-Specification §18（聚合生命周期与状态迁移记法全部变体）、§19（战术 DDD：实体/领域事件/命令/服务/仓库）、§20（应用层：命令/事件、流程与操作符、委派、协调）
 - MDSL-Specification §10.2（Event-Driven Service Design：五步工作流、中间语言定位、已知局限声明）
 - ICWE 2020 keynote（事件风暴用于发现领域模型元素；五阶段管线）
-- 语法形态核对（2026-10-10，`ContextMapper/context-mapper-dsl` @ master）：`ContextMappingDSL.xtext` 的 `Application`（commands / events / services / flows / coordinations 五类成员）、`Flow` 与 `FlowStep`（`DomainEventProductionStep` = `command X [delegates to Agg [迁移]] emits event Y`；`CommandInvokationStep` = `event X triggers command A X B`；操作符 `+`/`X`/`O`）、`Coordination`（`BC :: Service :: operation;`）；`TacticDDDLanguage.xtext` 的 `("Command" | "CommandEvent")` 与 `("DomainEvent" | "Event")`（体均可省）、`Enum`（`aggregateLifecycle` 关键字）、`TargetState`（`*` 终态标记）、`ServiceOperation`（`: write [ FROM -> TO ]` / `: read-only`）
+- 语法形态核对（2026-10-10，`ContextMapper/context-mapper-dsl` @ master）：`ContextMappingDSL.xtext` 的 `Application`（commands / events / services / flows / coordinations 五类成员）、`Flow` 与 `FlowStep`（`DomainEventProductionStep` = `command X [delegates to Agg [迁移]] emits event Y`；`CommandInvokationStep` = `event X triggers command A X B`；操作符 `+`/`X`/`O`）、`Coordination`（`BC :: Service :: operation;`）；`TacticDDDLanguage.xtext` 的 `("Command" | "CommandEvent")` 与 `("DomainEvent" | "Event")`（体均可省）、`Enum`（`aggregateLifecycle` 关键字）、`TargetState`（`*` 终态标记）、`ServiceOperation`（`: write [ FROM -> TO ]` / `: read-only`）（深度语法核对改读仓库内权威副本：CML `../dsl/cml/ContextMappingDSL.xtext` + `../dsl/cml/TacticDDDLanguage.xtext`，规则名→行区间查对应 `grammar-index.md`，pin commit 与 sha256 见 `../dsl/VERSIONS.md`），不再下载/解压上游仓库或读临时副本
 
 ---
 <details>

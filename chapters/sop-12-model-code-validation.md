@@ -204,7 +204,7 @@ BoundedContext eCommerceContext {
 - CML §46.8：验证扩展首次发布——"验证代码中的战术 DDD 概念符合模型"；§46.9：示例应用演示该验证；§46.7：模型级语义验证器（歧义引用、不可达限界上下文）
 - CML §4 语义规则 Rule #1–#10（步骤 0 模型级校验的依据）
 - 分析报告 §3 SOP-12、§5 原则 11（模型-代码鸿沟需主动守护）、§6 反模式（静默模型漂移）
-- 语法形态核对（2026-10-10，`ContextMapper/context-mapper-dsl` @ master，`TacticDDDLanguage.xtext`）：`terminal REF : ('-' | 'reference')` 与 `Reference` 规则（`REF (visibility)? (CollectionType<@DomainObject> | @DomainObject) name`——故 `- ProductId id` 与 `- List<OrderItem> items` 都是**引用**而非普通属性）；`enum Visibility : public | protected | private | package`（**不含** `-` / `+` / `#` 符号，因此 `-` 只能解释为 REF）；`Attribute` 规则末尾为 `(";")?`（分号可选）；`Entity` 的 `aggregateRoot` 标记；`ValueObject` 单词连写；`Type` 含 `double` / `DateTime` / `BigDecimal` 等且末位为 `JavaIdentifier`
+- 语法形态核对（2026-10-10，`ContextMapper/context-mapper-dsl` @ master，`TacticDDDLanguage.xtext`）：`terminal REF : ('-' | 'reference')` 与 `Reference` 规则（`REF (visibility)? (CollectionType<@DomainObject> | @DomainObject) name`——故 `- ProductId id` 与 `- List<OrderItem> items` 都是**引用**而非普通属性）；`enum Visibility : public | protected | private | package`（**不含** `-` / `+` / `#` 符号，因此 `-` 只能解释为 REF）；`Attribute` 规则末尾为 `(";")?`（分号可选）；`Entity` 的 `aggregateRoot` 标记；`ValueObject` 单词连写；`Type` 含 `double` / `DateTime` / `BigDecimal` 等且末位为 `JavaIdentifier`（深度语法核对改读仓库内权威副本：CML `../dsl/cml/ContextMappingDSL.xtext` + `../dsl/cml/TacticDDDLanguage.xtext`，规则名→行区间查对应 `grammar-index.md`，pin commit 与 sha256 见 `../dsl/VERSIONS.md`），不再下载/解压上游仓库或读临时副本
 - 校正记录：语料 §43 摘录里 `- OrderId id`、`- UserId purchaserId` 所引用的 `OrderId` / `UserId` 未在摘录内声明（`ProductId`、`OrderItem` 有声明），单独拷贝会悬空；使用示例已补 `ValueObject OrderId` 与 `ValueObject UserId` 使模型自洽
 
 ---

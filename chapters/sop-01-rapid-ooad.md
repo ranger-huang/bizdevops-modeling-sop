@@ -214,7 +214,7 @@ BoundedContext CustomerManagementFrontend {
 - CML-Specification §6（限界上下文类型：FEATURE/APPLICATION/SYSTEM/TEAM）、§7（域与子域：愿景陈述、类型、supports、子域内实体约束）
 - ICWE 2020 keynote（五阶段管线：User Story → Analysis Model → Design Model → Service Contract → Clients/Servers；Rapid OOAD 定位）
 - 分析报告 F2（五阶段管线）、F5（分解是持续过程）
-- 语法形态核对（2026-10-10，`ContextMapper/context-mapper-dsl` @ master）：`ContextMappingDSL.xtext` 的 ContextMap / BoundedContext / Subdomain / Aggregate / UpstreamDownstreamRelationship / StoryFeature 规则，以及官方变换测试输出 `derive-bc-from-subdomain-test-11-output.cml`（第 3 步产物：`Aggregate <子域名>Aggregate` + 自动补 `key` 标识属性 + 操作补 `boolean op (@Entity e);`）、`derive-frontend-backend-from-feature-test-6-output.cml`（第 4 步产物：`ContextMap { contains … ; A [ PL ] -> [ ACL ] B }` + `BoundedContext X { type SYSTEM }`）
+- 语法形态核对（2026-10-10，`ContextMapper/context-mapper-dsl` @ master）：`ContextMappingDSL.xtext` 的 ContextMap / BoundedContext / Subdomain / Aggregate / UpstreamDownstreamRelationship / StoryFeature 规则，以及官方变换测试输出 `derive-bc-from-subdomain-test-11-output.cml`（第 3 步产物：`Aggregate <子域名>Aggregate` + 自动补 `key` 标识属性 + 操作补 `boolean op (@Entity e);`）、`derive-frontend-backend-from-feature-test-6-output.cml`（第 4 步产物：`ContextMap { contains … ; A [ PL ] -> [ ACL ] B }` + `BoundedContext X { type SYSTEM }`）（深度语法核对改读仓库内权威副本：CML `../dsl/cml/ContextMappingDSL.xtext` + `../dsl/cml/TacticDDDLanguage.xtext`，规则名→行区间查对应 `grammar-index.md`，pin commit 与 sha256 见 `../dsl/VERSIONS.md`），不再下载/解压上游仓库或读临时副本
 - 校正记录：§25 摘录中的 `BoundedContext CustomerManagementBackend implements CustomerManagement` 不合语法——`implements` 只接受 `[DomainPart]`（Domain / Subdomain），不接受 BoundedContext；官方第 4 步变换输出对派生出的 SYSTEM 型 BC **不写** `implements`/`realizes`，使用示例据此处理
 
 ---

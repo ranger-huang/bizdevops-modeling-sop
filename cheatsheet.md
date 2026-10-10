@@ -1,6 +1,6 @@
 # Cheatsheet — 综合速查表
 
-> 细则见 [patterns.md](patterns.md)，术语见 [glossary.md](glossary.md)。
+> 细则见 [patterns.md](patterns.md)，术语见 [glossary.md](glossary.md)，CML/MDSL 语法核对见 [dsl/README.md](dsl/README.md)（官方 `.xtext` 已随仓库版本化留档 + 规则索引）。
 
 ## ① 15 个 SOP 综合速查表
 

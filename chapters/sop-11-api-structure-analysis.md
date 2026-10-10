@@ -186,7 +186,7 @@ roleCheck:
 
 - APIace：Serbout, Pautasso, Zdun, Zimmermann, "From OpenAPI Fragments to API Pattern Primitives and Design Smells", EuroPLoP 2021——§2（领域概念：API Tree / API Tree Structure / API Fragment / 投影为树结构+标签序列；碎片化方法；数据集规模）、§3（结构匹配 + 语义聚类管线、Known Uses 选取）、§4（P1–P4 原语定义、变体与坏味道逐一分析、Known Uses 指南表）、§5（并列/嵌套组合算子；与 MAP 的关系：HTTP↔职责映射、端点角色↔原语对应、MDSL 重建示例）
 - 分析报告 §2 F8、§3 SOP-11 草案、§6 反模式（API 结构五坏味道）
-- 术语与枚举核对（2026-10-10，`Microservice-API-Patterns/MDSL-Specification` @ master，`APIDescription.xtext`）：`OperationResponsibility` 含 `STATE_DELETION_OPERATION`——项级 DELETE 与容器"delete all"应对应此值，而非笼统写作 State Transition 的删除变体；另有 `RETRIEVAL_OPERATION` / `STATE_CREATION_OPERATION` / `STATE_TRANSITION_OPERATION` / `EVENT_PROCESSOR` / `COMPUTATION_FUNCTION`。`ResourceRole` 含 `REFERENCE_DATA_HOLDER` / `MASTER_DATA_HOLDER` / `OPERATIONAL_DATA_HOLDER` / `DATA_TRANSFER_RESOURCE` / `LINK_LOOKUP_RESOURCE`，即步骤 6「端点角色交叉核对」的取值域
+- 术语与枚举核对（2026-10-10，`Microservice-API-Patterns/MDSL-Specification` @ master，`APIDescription.xtext`）：`OperationResponsibility` 含 `STATE_DELETION_OPERATION`——项级 DELETE 与容器"delete all"应对应此值，而非笼统写作 State Transition 的删除变体；另有 `RETRIEVAL_OPERATION` / `STATE_CREATION_OPERATION` / `STATE_TRANSITION_OPERATION` / `EVENT_PROCESSOR` / `COMPUTATION_FUNCTION`。`ResourceRole` 含 `REFERENCE_DATA_HOLDER` / `MASTER_DATA_HOLDER` / `OPERATIONAL_DATA_HOLDER` / `DATA_TRANSFER_RESOURCE` / `LINK_LOOKUP_RESOURCE`，即步骤 6「端点角色交叉核对」的取值域（深度语法核对改读仓库内权威副本：MDSL `../dsl/mdsl/APIDescription.xtext`，规则名→行区间查对应 `grammar-index.md`，pin commit 与 sha256 见 `../dsl/VERSIONS.md`），不再下载/解压上游仓库或读临时副本
 
 ---
 <details>

@@ -249,7 +249,7 @@ governance_record:            # 步骤 5/6：契约表达不了的部分一律�
   - Pricing Plan — <https://microservice-api-patterns.org/patterns/quality/qualityManagementAndGovernance/PricingPlan.html>（Forces 四项与 Table 1 分级价目取自原始 HTML）
   - Rate Limit — <https://microservice-api-patterns.org/patterns/quality/qualityManagementAndGovernance/RateLimit.html>（Forces 五项、GitHub 429/X-RateLimit-* 示例、Figure 1 题注取自原始 HTML）
   - Service Level Agreement（Related Patterns 交叉链接）— <https://microservice-api-patterns.org/patterns/quality/qualityManagementAndGovernance/ServiceLevelAgreement.html>
-- 一手源码：仓库 `Microservice-API-Patterns/MDSL-Specification`，分支 master，实测 HEAD `9da0bac0e6133b8a69131925e38bc98e63e20af2`（2025-01-23，与前序调研行号零漂移）；历史版本对照 tag `v3.1`（2020-05，rate 语法自此冻结）；语法文件行锚点 L40 / L438–457 / L556 / L596–651 / L741–753；OpenAPI 转换器 L185（网关生成崩溃根因）；格式化器 TODO L55；changelog L230（External SLAs now supported）、L3–9（V6.0.0 "No new features"）——逐条 URL 详见主源 §九
+- 一手源码：仓库 `Microservice-API-Patterns/MDSL-Specification`，分支 master，实测 HEAD `9da0bac0e6133b8a69131925e38bc98e63e20af2`（2025-01-23，与前序调研行号零漂移）；历史版本对照 tag `v3.1`（2020-05，rate 语法自此冻结）；语法文件行锚点 L40 / L438–457 / L556 / L596–651 / L741–753；OpenAPI 转换器 L185（网关生成崩溃根因）；格式化器 TODO L55；changelog L230（External SLAs now supported）、L3–9（V6.0.0 "No new features"）——逐条 URL 详见主源 §九（深度语法核对改读仓库内权威副本：MDSL `../dsl/mdsl/APIDescription.xtext`，规则名→行区间查对应 `grammar-index.md`，pin commit 与 sha256 见 `../dsl/VERSIONS.md`），不再下载/解压上游仓库或读临时副本；本章引用的 `.xtext` 行号锚点以该 pin commit 为准
 - 官方示例与文档（限流/计价子句全仓出现处全量）：`examples/MDSLGitPages/ProviderSLAClientExample.mdsl`（L10–26）、`examples/examples-advanced/CustomerRelationshipManagementExample.mdsl`（L102–145，含废弃语法化石注释）、`examples/examples-advanced/MAPDecoratorUsageReference.mdsl`（L171–188）、`docs/optionalparts.md`（L52–76，全部官方文档中唯一记载处）
 
 ---
