@@ -71,36 +71,84 @@
 
 ## 使用示例
 
-订单履约事件流（工具中立结构化模板）：
+订单履约事件流（以 MDSL + AsyncMDSL 扩展为载体；方法本身工具中立）。`ServiceSpecification` 的元素顺序强制：`data type` → `event type` / `command type` → `channel` → `message broker` → `message endpoint` → `flow`。
+
+**步骤 1–2：领域模型 + 流程视图**
 
 ```
-步骤 1–2：领域模型 + 流程视图（文本图）
+  [OrderPaid] ──triggers──> 〈CreateShipment〉 ──emits──> [ShipmentCreated]
+       │                                                        │
+       └──triggers──> 〈NotifyWarehouse〉 ──emits──> [WarehouseNotified]
+                                                                 └──triggers──> 〈TrackShipment〉
 
-  [订单已支付] ──触发──> 〈创建发货单〉 ──发出──> [发货单已创建]
-       │                                              │
-       └──触发──> 〈通知仓库〉 ──发出──> [仓库已通知]   └──触发──> 〈跟踪物流〉
+  流类型: INTEGRATION_FLOW（EIP）；并行分支: +（AND）—— CreateShipment 与 NotifyWarehouse 并行
+```
 
-  流类型: 集成流；并行分支: AND（创建发货单 与 通知仓库 并行）
+**步骤 3：事件 ↔ 操作映射表**
 
-步骤 3：事件↔操作映射表
+| 流程元素 | Endpoint | Operation | 职责（OperationResponsibility） | 状态声明 |
+|---|---|---|---|---|
+| `OrderPaid`（event） | ShipmentEndpoint | （`receives` 声明，无对应 operation） | — | — |
+| `CreateShipment`（command） | ShipmentEndpoint | createShipment | STATE_CREATION_OPERATION | NOT_SHIPPED → SHIPPED |
+| `ShipmentCreated`（event） | ShipmentEndpoint | onShipmentCreated | EVENT_PROCESSOR（通知型） | emits `ShipmentCreated` |
+| `NotifyWarehouse`（command） | WarehouseEndpoint | notifyWarehouse | STATE_TRANSITION_OPERATION | NOTIFICATION_PENDING → NOTIFIED |
 
-| 流程元素          | 端点             | 操作              | 职责                  | 状态声明              |
-|-------------------|------------------|-------------------|-----------------------|-----------------------|
-| 订单已支付(事件)   | ShipmentEndpoint | （接收声明）       | —                     | —                     |
-| 创建发货单(命令)   | ShipmentEndpoint | createShipment    | State Creation        | 未发货 → 已发货        |
-| 发货单已创建(事件) | ShipmentEndpoint | onShipmentCreated | Event Processor(通知) | 发出 发货单已创建      |
-| 通知仓库(命令)     | WarehouseEndpoint| notifyWarehouse   | State Transition      | 仓库待通知 → 已通知    |
+**步骤 5：消息路由 / 集成流（MDSL）**
 
-步骤 5：消息路由/集成流（YAML 风格伪码）
+```mdsl
+API description OrderFulfillmentEventsAPI version "0.1.0"
+usage context SOLUTION_INTERNAL_API for BACKEND_INTEGRATION
 
-channels:
-  ShipmentCommands:  { 类型: 点对点,   接受: 命令消息 创建发货单, 死信: ShipmentCommands.DLQ }
-  ShipmentEvents:    { 类型: 发布-订阅, 投递保证: 至少一次, 产生: 事件消息 发货单已创建 }
-broker:  消息代理（地址与协议绑定按部署上下文确定）
-endpoints:
-  ShipmentEndpoint:  使用 [ShipmentCommands, ShipmentEvents]
-补偿:  cancelShipment（createShipment 的业务级撤销，同端点内）
-未映射元素登记:  [策略: 超时自动取消]（本轮无建模对应物 → 人工跟进）
+data type Shipment { "shipmentNo": ID, "orderId": ID<int>, "status": D<string> }
+
+event type OrderPaid, ShipmentCreated, WarehouseNotified
+command type CreateShipment, NotifyWarehouse, TrackShipment
+
+// 命令通道：点对点 + 死信；消息意图 = COMMAND_MESSAGE
+channel ShipmentCommands of type POINT_TO_POINT
+  delivery guarantee AT_LEAST_ONCE
+  on path "queue://shipment/commands"
+  accepts message CreateShipmentCommand
+    expecting payload Shipment as COMMAND_MESSAGE
+
+channel ShipmentCommandsDLQ of type DEAD_LETTER
+  on path "queue://shipment/commands/dlq"
+  accepts message CreateShipmentCommand
+    expecting payload Shipment as COMMAND_MESSAGE
+
+// 事件通道：发布-订阅 + 保证投递；消息意图 = EVENT_MESSAGE
+channel ShipmentEvents of type PUBLISH_SUBSCRIBE, GUARANTEED_DELIVERY
+  delivery guarantee AT_LEAST_ONCE
+  on path "topic://shipment/events"
+  produces message ShipmentCreatedEvent
+    delivering payload Shipment as EVENT_MESSAGE
+
+// 消息代理：暴露通道，地址与协议绑定按部署上下文确定
+message broker ShipmentBroker
+  exposes ShipmentCommands, ShipmentEvents
+    at location "amqp://broker.internal:5672"
+    via protocol AMQP
+
+// 集成流：+ / and = 并行，x / xor / alternatively = 互斥其一，o / or = 包含（一个或多个）
+flow ShipmentFulfillmentFlow type INTEGRATION_FLOW
+  event OrderPaid triggers command CreateShipment + NotifyWarehouse
+  command CreateShipment emits event ShipmentCreated
+  command NotifyWarehouse emits event WarehouseNotified
+  event ShipmentCreated triggers command TrackShipment
+```
+
+**过程记录（端点通道使用、补偿、未映射元素）**：
+
+```yaml
+event_flow_record:
+  endpoint_channels:                 # 句式：message endpoint <name> uses from <broker>: <channel>, <channel>
+    ShipmentEndpoint: [ShipmentCommands, ShipmentEvents]
+  compensation:
+    operation: cancelShipment        # createShipment 的业务级撤销，同端点内
+  correlation: PENDING               # 请求-应答通道须声明关联标识（where 子句的 CorrelationIdWhereClause）与应答通道
+  unmapped_elements:                 # 已知局限 1：并非所有事件风暴元素都有建模对应物
+    - element: "策略：超时自动取消"
+      status: NO_MODEL_COUNTERPART   # 本轮无建模对应物 → 人工跟进
 ```
 
 ## 技术交付物
@@ -145,12 +193,13 @@ endpoints:
 - MDSL-Specification（站点研究报告）：§10.2 事件驱动服务设计博客摘要（五步流程、中间语言定位、已知局限）；§4.8 编排流（流步骤、并行/汇合、流类型与绑定）；§4.9 异步消息扩展 AsyncMDSL（通道类型、消息代理、消息端点、请求-应答通道）；§5 快速参考（含事件/命令类型的流示例）；§7 变换与重构（流到端点变换）
 - CML-Specification（站点研究报告）：§39 事件风暴建模（可建模元素清单）、§40 事件溯源与 CQRS 建模
 - 分析报告 §3 SOP-09 草案、§2 F2（五阶段管线）
+- 语法形态核对（2026-10-10，`Microservice-API-Patterns/MDSL-Specification` @ master，`APIDescription.xtext`）：`ServiceSpecification` 元素顺序（`data type` → `relation type` → `event type` / `command type` → `endpoint type` / `channel` → `SLA template` → `API provider` / `message broker` → `API client` / `message endpoint` → `API gateway` → `flow` → `scenario`）；`ChannelContract`（`'channel' name ('of' 'type' ChannelType,…)? ('delivery' 'guarantee' DeliveryGuarantee)?` + `OneWayChannel` 或 `RequestReplyChannel`）、`ChannelType`（POINT_TO_POINT | PUBLISH_SUBSCRIBE | DATA_TYPE | INVALID_MESSAGE | DEAD_LETTER | GUARANTEED_DELIVERY）、`DeliveryGuarantee`（UNKNOWN | AT_LEAST_ONCE | AT_MOST_ONCE | EXACTLY_ONCE）、`OneWayChannel`（`on path "…"` + `accepts` / `produces` / `accepts and produces` + `message`）、`Message`（`'message' name ('description')? ('delivering'|'expecting') Payload`）、`Payload`（`DataTransferRepresentation ('as' MessageType)?`）、`MessageType`（COMMAND_MESSAGE | EVENT_MESSAGE | DOCUMENT_MESSAGE，即正文的三种消息意图）、`WhereClauses`（MESSAGE_EXPIRES / SEQUENCE_ID / CORRELATION_ID——请求-应答通道的关联标识）、`MessageBroker`（`'message' 'broker' name ('description')? ('exposes' AsyncEndpoint …)+`；`AsyncEndpoint` = `channels at location "…" via protocol <ProtocolBinding>`，`OtherBinding` 含 AMQP / JMS_ActiveMQ / Kafka / MQTT / STOMP / Web_Sockets / SOAP_HTTP / JSON-RPC / Avro_RPC / Thrift）、`MessageEndpoint`（`'message' 'endpoint' name ('of' 'type' …)? ('serves' 'as' …)? 'uses' ('channels:' …)? ('from' <broker> ':' …)?`）、`Orchestration`（`'flow' name ('version')? ('realizes' scenario)? ('type' FlowType)? steps* ('binding' 'to' …)? ('implemented' 'as' FlowTechnology)?`）、`FlowType`（APPLICATION_FLOW | INTEGRATION_FLOW | SERVICE_ORCHESTRATION | API_CALL_SEQUENCING | EVENT_SOURCING）、`OperationResponsibility`（含 EVENT_PROCESSOR / STATE_CREATION_OPERATION / STATE_TRANSITION_OPERATION）
 
 ---
 <details>
 <summary>📎 原始语法参考（CML/MDSL）— 点击展开</summary>
 
-以下片段忠实摘自语料原文，供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考。
+以下片段忠实摘自语料原文，供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考。上方「使用示例」已按 AsyncMDSL 语法写成**一份完整契约**；摘录按约定保留。对照 master 语法有两点需精确理解：① §5 摘录 `triggers command Command1 or Command2` 里的 `or` 属**包含**分支（`InclusiveAlternativeCommandInvokation`：`o | O | or`，一个或多个），互斥分支是 `x | X | xor | alternatively`——不要把 `or` 读成 XOR；② `CommandInvokationStep` 的**事件侧**不支持 `or`/`xor`（语法注释明示），多个事件触发同一命令只能用 `+`/`and`，或拆成多步。
 
 **含事件/命令类型的流（MDSL §5 快速参考）**——步骤 1/2 的事件-命令流表示：
 
@@ -184,7 +233,7 @@ event startProcessCompleted triggers command startProcessCompletedProcessor
 command CRUDSomeBusinessObject emits event CRUDSomeBusinessObjectCompleted
 ```
 
-流步骤类型（§4.8）：组合步骤 `event Event1 triggers command Command1 emits event Event2`；并行分支 `+`（AND）、`o`（OR）、`x`（XOR）；汇合 `event Command1Done + Command2Done trigger command JoinedContinuationCommand`。
+流步骤类型（§4.8）：组合步骤 `event Event1 triggers command Command1 emits event Event2`；并行分支 `+`（AND）、`o`（OR）、`x`（XOR）；汇合 `event Command1Done + Command2Done trigger command JoinedContinuationCommand`。按 master 语法，`o`/`O`/`or` 是**包含**分支（一个或多个），`x`/`X`/`xor`/`alternatively` 才是互斥。
 
 **流到端点变换（MDSL §7）**——步骤 3 推导规则的原始定义：
 
