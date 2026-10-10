@@ -123,10 +123,31 @@ BoundedContext ClaimsManagement {
 			command RejectClaim emits event ClaimRejected
 		}
 	}
+
+	// 事件溯源视角：聚合生命周期 + 每个写操作的显式状态迁移
+	Aggregate Claims {
+		Entity Claim {
+			String claimId key
+			String reason4Rejection
+		}
+
+		enum ClaimStates {
+			aggregateLifecycle
+			OPEN, ACCEPTED, REJECTED
+		}
+
+		// 聚合侧操作是应用层 Command 的对应物（流程中亦可用 operation 替代 command 表述）
+		Service ClaimsService {
+			String submitClaim (@Claim claim) : write [ -> OPEN ];              // 初始状态
+			boolean checkInsurance (String claimId) : read-only;                // 只读，无迁移
+			boolean acceptClaim (String claimId) : write [ OPEN -> ACCEPTED* ]; // * = 终态
+			boolean rejectClaim (String claimId) : write [ OPEN -> REJECTED* ];
+		}
+	}
 }
 ```
 
-**事件溯源视角的状态迁移（同一案例）**：
+**事件溯源视角的状态迁移（同一案例，即上段 `Aggregate Claims` 内 `Service ClaimsService` 的标注）**：
 
 | 操作 | 读写 | 状态迁移 |
 |------|------|---------|
@@ -135,30 +156,7 @@ BoundedContext ClaimsManagement {
 | acceptClaim | write | `OPEN -> ACCEPTED*` |
 | rejectClaim | write | `OPEN -> REJECTED*` |
 
-同一内容的原生 CML：`enum` + `aggregateLifecycle` 声明聚合生命周期，写操作以 `: write [ FROM -> TO ]` 标注迁移，`*` 为终态标记（`TargetState: value=[EnumValue] (endState?='*')?`）：
-
-```cml
-// 事件溯源视角：聚合生命周期 + 每个写操作的显式状态迁移（与上表一一对应）
-enum ClaimStates {
-	aggregateLifecycle
-	OPEN, ACCEPTED, REJECTED
-}
-
-Aggregate Claims {
-	Entity Claim {
-		String claimId key
-		String reason4Rejection
-	}
-
-	// 聚合侧操作是应用层 Command 的对应物（流程中亦可用 operation 替代 command 表述）
-	Service ClaimsService {
-		String submitClaim (@Claim claim) : write [ -> OPEN ];              // 初始状态
-		boolean checkInsurance (String claimId) : read-only;                // 只读，无迁移
-		boolean acceptClaim (String claimId) : write [ OPEN -> ACCEPTED* ]; // * = 终态
-		boolean rejectClaim (String claimId) : write [ OPEN -> REJECTED* ];
-	}
-}
-```
+`enum ClaimStates` + `aggregateLifecycle` 声明聚合生命周期，写操作以 `: write [ FROM -> TO ]` 标注迁移、只读操作以 `: read-only` 标注，`*` 为终态标记（语法 `TargetState: value=[EnumValue] (endState?='*')?`）。注意三者都嵌在 `Aggregate` 内——按 `ContextMappingModel` 规则，`enum` 与 `Aggregate` 都**不是** CML 的顶层元素。
 
 ## 技术交付物
 
