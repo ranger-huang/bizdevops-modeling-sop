@@ -24,9 +24,9 @@
 - 集合类 API 的基本骨架：
 
 ```
-R  容器资源（container resource，静态命名）
+R                            Container Resource（容器资源，静态命名）
    ... 挂载的 HTTP 方法
-{collection item address}  集合项资源（参数化寻址）
+{collection item address}    Collection Item Resource（集合项资源，参数化寻址）
    ... 挂载的 HTTP 方法
 ```
 
@@ -94,48 +94,56 @@ R  容器资源（container resource，静态命名）
 
 ## 使用示例
 
-任务管理 API 盘点（工具中立结构化模板）：
+任务管理 API 盘点（结构化分析记录；坏味道与原语用 MAP 发表名，职责用 MDSL `OperationResponsibility` 枚举值）：
 
 ```yaml
-api: TaskTracker API v2（OpenAPI 类描述，14 条路径）
+api: "TaskTracker API v2"          # OpenAPI 类描述，14 条路径
 
-# 步骤 1–2：资源树 + 碎片
+# 步骤 1–2：资源树 + 碎片（Fragment）
 fragments:
   - id: F1
     path: "/projects/{projectId}/tasks/{taskId}"
-    container: { 路径: /projects/{projectId}/tasks, 方法: [GET, POST] }
-    item:      { 路径: .../tasks/{taskId},           方法: [GET, PUT] }
+    container: { path: "/projects/{projectId}/tasks", methods: [GET, POST] }
+    item:      { path: "/projects/{projectId}/tasks/{taskId}", methods: [GET, PUT] }   # 原为省略号，已补全
   - id: F2
     path: "/webhooks/{webhookId}"
-    container: { 路径: /webhooks, 方法: [POST] }
-    item:      { 路径: /webhooks/{webhookId}, 方法: [DELETE] }
+    container: { path: "/webhooks", methods: [POST] }
+    item:      { path: "/webhooks/{webhookId}", methods: [DELETE] }
 
-# 步骤 3–4：原语归类（按方法组合判定表）
+# 步骤 3–4：原语归类（按容器方法组合判定）
 classification:
-  - F1 → P3 Collection（容器 GET+POST），项级 GET+PUT → 形态同 P3.s2
-  - F2 → P2 Appendable Collection（容器仅 POST），项级仅 DEL → 形态同 P2.s2
+  - { fragment: F1, primitive: "P3 Collection",            variant: P3.s2 }   # 容器 GET+POST；项级 GET+PUT
+  - { fragment: F2, primitive: "P2 Appendable Collection", variant: P2.s2 }   # 容器仅 POST；项级仅 DELETE
 
 # 步骤 5：坏味道清单（位置 + 证据 + 语境判断）
 smells:
   - id: SM-1
-    smell: Create without Delete
-    location: /projects/{projectId}/tasks（F1）
-    evidence: 容器 POST 可创建任务；全子树无任何 DELETE
-    context: 任务生命周期由客户端控制 → 非正当豁免，需修正
+    smell: "Create without Delete"
+    location: { fragment: F1, path: "/projects/{projectId}/tasks" }
+    evidence: "容器 POST 可创建任务；全子树无任何 DELETE"
+    context: "任务生命周期由客户端控制 → 非正当豁免，需修正"
   - id: SM-2
-    smell: Write-Only
-    location: /webhooks（F2）
-    evidence: 容器与条目均无 GET；POST 返回新条目地址 ✓
-    context: 订阅类有限用途候选 → 与消费方确认后二选一（补 GET / 记录决策）
+    smell: "Write-Only"
+    location: { fragment: F2, path: "/webhooks" }
+    evidence: "容器与条目均无 GET；POST 返回新条目地址 ✓"
+    context: "订阅类有限用途候选 → 与消费方确认后二选一（补 GET / 记录决策）"
 
 # 步骤 6：修正建议（转 SOP-10 模式决策）+ 组合评审
 fixes:
-  - SM-1 → 新增 DELETE .../tasks/{taskId}（职责: State Transition 删除变体）
-  - SM-2 → 建议补 GET（职责: Retrieval）；若保留 Write-Only 须记录决策与地址返回约束
+  - smell: SM-1
+    action: "新增 DELETE /projects/{projectId}/tasks/{taskId}"
+    operation_responsibility: STATE_DELETION_OPERATION    # MDSL 有专门的删除职责枚举值
+  - smell: SM-2
+    action: "建议补 GET /webhooks/{webhookId}"
+    operation_responsibility: RETRIEVAL_OPERATION
+    alternative: "若保留 Write-Only，须记录决策与'POST 返回新条目地址'约束"
 composition:
-  - 嵌套: tasks 嵌于 projects 项下 —— 符合领域包含关系 ✓
+  - { operator: nesting, verdict: PASS }     # ✓ tasks 嵌于 projects 项下，符合领域包含关系
 roleCheck:
-  - F2 自称"配置数据端点"但形态为 Appendable → 与 Reference Data Holder 预期（只读可枚举）不符，记录
+  - fragment: F2
+    claimed_role: "Reference Data Holder"    # 自称"配置数据端点"
+    observed_primitive: "P2 Appendable Collection"
+    verdict: MISMATCH                        # Reference Data Holder 预期只读可枚举（→ P1），记录待处理
 ```
 
 ## 技术交付物
@@ -178,12 +186,13 @@ roleCheck:
 
 - APIace：Serbout, Pautasso, Zdun, Zimmermann, "From OpenAPI Fragments to API Pattern Primitives and Design Smells", EuroPLoP 2021——§2（领域概念：API Tree / API Tree Structure / API Fragment / 投影为树结构+标签序列；碎片化方法；数据集规模）、§3（结构匹配 + 语义聚类管线、Known Uses 选取）、§4（P1–P4 原语定义、变体与坏味道逐一分析、Known Uses 指南表）、§5（并列/嵌套组合算子；与 MAP 的关系：HTTP↔职责映射、端点角色↔原语对应、MDSL 重建示例）
 - 分析报告 §2 F8、§3 SOP-11 草案、§6 反模式（API 结构五坏味道）
+- 术语与枚举核对（2026-10-10，`Microservice-API-Patterns/MDSL-Specification` @ master，`APIDescription.xtext`）：`OperationResponsibility` 含 `STATE_DELETION_OPERATION`——项级 DELETE 与容器"delete all"应对应此值，而非笼统写作 State Transition 的删除变体；另有 `RETRIEVAL_OPERATION` / `STATE_CREATION_OPERATION` / `STATE_TRANSITION_OPERATION` / `EVENT_PROCESSOR` / `COMPUTATION_FUNCTION`。`ResourceRole` 含 `REFERENCE_DATA_HOLDER` / `MASTER_DATA_HOLDER` / `OPERATIONAL_DATA_HOLDER` / `DATA_TRANSFER_RESOURCE` / `LINK_LOOKUP_RESOURCE`，即步骤 6「端点角色交叉核对」的取值域
 
 ---
 <details>
 <summary>📎 原始语法参考（CML/MDSL）— 点击展开</summary>
 
-以下片段忠实摘自语料原文（APIace 论文 §5.2 用 MDSL 重建被分析 API 的示例），供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考——展示"盘点结论如何落成抽象契约"。
+以下片段忠实摘自语料原文（APIace 论文 §5.2 用 MDSL 重建被分析 API 的示例），供对接 BCM（`github.com/appfun-dev/bcm`）的 CUE 元模型时参考——展示"盘点结论如何落成抽象契约"。上方「使用示例」是**分析记录**（结构化 YAML，非 DSL）：坏味道与原语沿用 MAP 发表名，便于与 [patterns.md ④](../patterns.md) 逐条对账；操作职责则改用 MDSL `OperationResponsibility` 枚举值，便于直接落进契约。
 
 **数据契约（原语归类后的表示元素定型）**：
 
