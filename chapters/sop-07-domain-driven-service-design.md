@@ -13,8 +13,10 @@
 管线全貌（五阶段视图，七步是其展开）：
 
 ```
-用户故事/用例 → 分析模型（子域、实体） → 设计模型（FEATURE 型 BC + 聚合；SYSTEM 型 BC）
-             → 服务契约（抽象契约语言 → 技术专属 IDL） → 客户端/服务端实现
+UserStory / UseCase → Analysis Model（Subdomain、Entity）
+                    → Design Model（FEATURE 型 Bounded Context + Aggregate；SYSTEM 型 Bounded Context）
+                    → Service Contract（抽象契约语言 → 技术专属 IDL）
+                    → Client / Server Implementation
 ```
 
 每一阶段转移都可自动推导初稿、人工精化（自动化程度递减：分析→设计模型可较完整推导，契约→实现只给骨架/桩）。**人不可替代的两个环节：领域分析（步骤 2）与模式装饰决策（步骤 4）**——其余环节的推导都建立在这两个人工决策之上。
@@ -45,12 +47,12 @@ DDD 概念到服务契约概念的系统映射（SummerSoC Table 2 完整表）�
 
 | DDD 概念 | 契约概念 | 说明 |
 |---|---|---|
-| 上游限界上下文（关系中处于 upstream 者） | API 契约 | 一 BC 一（微）服务一契约 |
-| 上游暴露的聚合 | API 端点 | 每个暴露聚合一个独立端点 |
-| 根实体或服务中的方法 | 操作（operation） | 从聚合内根实体/服务的方法派生 |
-| 上述方法的参数与返回类型 | 数据类型定义 | 被操作的请求/响应消息引用 |
-| 上游限界上下文 | API 提供方（provider） | 向下游暴露领域模型的一部分 |
-| 下游限界上下文 | API 消费方（client） | 使用上游暴露的模型 |
+| Upstream Bounded Context（关系中处于 upstream 者） | `API description` + `endpoint type` | 一 BC 一（微）服务一契约 |
+| Exposed Aggregate（上游暴露的聚合） | `endpoint`（resource） | 每个暴露聚合一个独立端点 |
+| Aggregate Root Entity / Service method | `operation` | 从聚合内根实体/服务的方法派生 |
+| Method Parameter & Return Type | `data type` / `data element` | 被操作的 `expecting` / `delivering` 消息引用 |
+| Upstream Bounded Context | `API provider` | 向下游暴露领域模型的一部分 |
+| Downstream Bounded Context | `API client` | 使用上游暴露的模型 |
 
 推导产物是**技术中立的抽象契约**，含四段：数据类型、端点与操作（含期待/交付消息）、提供方（含协议与地址绑定位）、消费方。抽象契约语言的设计原则（以 MDSL 为代表）：
 
@@ -84,44 +86,117 @@ DDD 概念到服务契约概念的系统映射（SummerSoC Table 2 完整表）�
 
 ## 使用示例
 
-保险客户核心域走查（对应步骤 3 折叠段的示例契约）：
+保险客户核心域走查。步骤 1/2 用 CML、步骤 3/4 用 MDSL（与折叠段 SummerSoC Listing 3.1 同源，并加上步骤 4 的 MAP 装饰），步骤 5–7 为走查记录：
+
+**步骤 1 — 用户故事（CML）**：
+
+```cml
+UserStory ManageCustomerAddresses {
+	As a "Customer Self-Service Application"
+	I want to "create" an "Address" for a "Customer"
+	I want to "change" an "Address" for a "Customer"
+	so that "I can maintain customer addresses through the customer core API."
+}
+```
+
+**步骤 2 — 战略 + 战术 DDD 模型（CML；关系上的 `exposedAggregates` 是步骤 3 端点推导的直接输入）**：
+
+```cml
+ContextMap {
+	contains CustomerCore, CustomerSelfService, CustomerManagement, PolicyManagement
+
+	CustomerCore [U,OHS,PL] -> [D] CustomerSelfService { exposedAggregates = CustomersAggregate }
+	CustomerCore [U,OHS,PL] -> [D] CustomerManagement  { exposedAggregates = CustomersAggregate }
+	CustomerCore [U,OHS,PL] -> [D] PolicyManagement    { exposedAggregates = CustomersAggregate }
+}
+
+BoundedContext CustomerCore {
+	type = FEATURE
+	domainVisionStatement = "Manages customer master data including addresses."
+	responsibilities = "Customers", "Addresses"
+
+	Aggregate CustomersAggregate {
+		Entity Customer {
+			aggregateRoot
+			String firstname
+			String lastname
+			SocialInsuranceNumber sin
+			List<Address> addresses
+		}
+
+		ValueObject SocialInsuranceNumber {
+			String sin
+		}
+
+		ValueObject Address {
+			String street
+			int postalCode
+			String city
+		}
+
+		// 操作挂在 Service 上（映射表允许"根实体或服务中的方法"）；挂根实体则属
+		// DomainObjectOperation，语法需 def 前缀。返回类型 AddressId 尚未细化——
+		// 在契约侧以占位符 data type AddressId P 表达（部分规格合法）
+		Service CustomersService {
+			AddressId createAddress (@Customer customer, Address address);
+			boolean changeAddress (Address address);
+		}
+	}
+}
+
+BoundedContext CustomerSelfService
+BoundedContext CustomerManagement
+BoundedContext PolicyManagement
+```
+
+**步骤 3+4 — 抽象服务契约 + MAP 装饰（MDSL；按 Table 2 逐行映射：BC→契约、暴露聚合→端点、服务方法→操作、参数与返回类型→数据类型、上下游→provider/client）**：
+
+```mdsl
+API description CustomerCoreAPI
+usage context PUBLIC_API for BACKEND_INTEGRATION and FRONTEND_INTEGRATION
+
+data type Customer { "firstname": D<string>, "lastname": D<string>,
+                     "sin": SocialInsuranceNumber, "addresses": Address* }
+data type SocialInsuranceNumber { "sin": D<string> }
+data type Address { "street": D<string>, "postalCode": D<int>, "city": D<string> }
+data type AddressId P                            // placeholder：AddressId 尚未细化
+data type createAddressParameter { "customer": Customer, "address": Address }
+
+endpoint type CustomersAggregate serves as MASTER_DATA_HOLDER role   // Information Holder 的特化
+  exposes
+    operation createAddress with responsibility STATE_CREATION_OPERATION
+      expecting payload createAddressParameter
+      delivering payload AddressId
+    operation changeAddress with responsibility STATE_TRANSITION_OPERATION
+      expecting payload Address
+      delivering payload D<bool>
+
+API provider CustomerCoreProvider
+  offers CustomersAggregate
+  at endpoint location "http://localhost:8000"
+  via protocol "RESTful HTTP"
+
+API client CustomerSelfServiceClient
+  consumes CustomersAggregate
+API client CustomerManagementClient
+  consumes CustomersAggregate
+API client PolicyManagementClient
+  consumes CustomersAggregate
+```
+
+**步骤 5–7 — 绑定、polyglot 校验与原型（走查记录）**：
 
 ```yaml
-step1_story: "作为客户自助应用，我需要为客户创建与修改地址（经客户核心 API）"
-step2_model:
-  bounded_context: CustomerCore          # FEATURE 型，PUBLIC_API
-  upstream_of: [CustomerSelfService, CustomerManagement, PolicyManagement]
-  exposed_aggregate: CustomersAggregate
-    root_entity: Customer
-      attributes: { firstname: string, lastname: string,
-                    sin: SocialInsuranceNumber, addresses: Address* }
-      methods:
-        - createAddress(customer, address) -> AddressId   # 写
-        - changeAddress(address) -> bool                  # 写
-step3_contract_derivation:               # 按 Table 2 逐行映射
-  api_contract:  CustomerCoreAPI          # ← 上游 BC
-  endpoint:      CustomersAggregate       # ← 暴露聚合
-  operations:                             # ← 根实体方法
-    createAddress: { expecting: createAddressParameter, delivering: AddressId }
-    changeAddress: { expecting: Address,  delivering: D<bool> }
-  data_types: [Customer, Address, SocialInsuranceNumber,
-               AddressId(P 占位符——尚未细化，合法的部分规格),
-               createAddressParameter]
-  provider: CustomerCoreProvider          # ← 上游
-  clients:  [CustomerSelfService, CustomerManagement, PolicyManagement]  # ← 下游
-step4_decoration:                         # 人工模式决策
-  endpoint_role: INFORMATION_HOLDER       # 主数据持有者
-  operation_responsibility:
-    createAddress: STATE_CREATION
-    changeAddress: STATE_TRANSITION
-  element_stereotypes: { firstname/lastname/sin/addresses: D, AddressId: ID }
-step5_binding: { protocol: "RESTful HTTP", location: "…:8000",
-                 rationale: "前后端集成 + 后端集成，请求-响应语义" }
-step6_polyglot_check:
-  openapi: ✓ 派生成功
-  grpc_proto: ✓ 派生成功      # 一模型两契约，polyglot 验证通过
-step7_prototype: 服务端骨架 + 客户端桩 → 部署验证环境 → 跑通"创建地址"故事路径
-human_touchpoints: [step2 领域分析, step4 模式装饰决策]   # 其余为推导初稿+精化
+pipeline_record:
+  step5_binding:
+    protocol: "RESTful HTTP"
+    location: "http://localhost:8000"
+    rationale: "前后端集成 + 后端集成，请求-响应语义"
+  step6_polyglot_check:
+    openapi: DERIVED          # ✓ 派生成功
+    grpc_proto: DERIVED       # ✓ 一模型两契约，polyglot 验证通过
+  step7_prototype: "server stub + client stub → 部署验证环境 → 跑通 createAddress 故事路径"
+  human_touchpoints: [step2_domain_analysis, step4_pattern_decoration]   # 其余为推导初稿 + 精化
 ```
 
 ## 技术交付物
@@ -166,12 +241,14 @@ human_touchpoints: [step2 领域分析, step4 模式装饰决策]   # 其余为�
 - SummerSoC 2020（Kapferer & Zimmermann）§3.3 + Table 2：DDD 上下文映射→服务契约六行映射、示例契约（Listing 3.1）、附录 A：MDSL 设计原则（平台/协议无关、部分规格、可读性优先）、名称-角色-类型三元组与 MAP 装饰器
 - ICWE 2020 主题演讲（Zimmermann, *Dimensions of Successful Web API Design and Evolution*）：Context/Contracts/Components 三维模型、五阶段管线（User Story→Analysis→Design→Contract→Clients/Servers，生成程度 fully/initially/stubs）、神话破除 1/2/3（技术优先、HTTP 确认偏误、NIH）
 - MDSL 规范 §10.4（MAP 元博客摘要）：MAP 起点（EIP 止步处的载荷结构）、元素刻板印象作为契约装饰器
+- 语法形态核对（2026-10-10，均取 master 分支）：MDSL `APIDescription.xtext` 的 `EndpointContract`（`'serves' 'as' primaryRole=ResourceRole ('and' otherRoles+=ResourceRole)* 'role'?`）、`ResourceRole` 枚举（PROCESSING_RESOURCE / INFORMATION_HOLDER_RESOURCE / OPERATIONAL_DATA_HOLDER / MASTER_DATA_HOLDER / REFERENCE_DATA_HOLDER / DATA_TRANSFER_RESOURCE / LINK_LOOKUP_RESOURCE / STATEFUL_PROCESSING_RESOURCE / …）、`OperationResponsibility` 枚举（COMPUTATION_FUNCTION / STATE_CREATION_OPERATION / RETRIEVAL_OPERATION / STATE_TRANSITION_OPERATION / EVENT_PROCESSOR / BUSINESS_ACTIVITY_PROCESSOR / STATE_REPLACEMENT_OPERATION / STATE_DELETION_OPERATION）、官方 `examples/examples-advanced/MAPDecoratorUsageReference.mdsl`（`<<pattern>>` 装饰器与 IRT 三元组写法）；CML `TacticDDDLanguage.xtext` 的 `ValueObject`（单词连写，非 `Value Object`）、`Type` 末位为 `JavaIdentifier`（故自定义类型名合法）、`Parameter`（`ComplexType` + `name`，故 `@Customer customer` 与 `Address address` 均可）、`DomainObjectOperation`（需 `def` 或 `*` 前缀，故示例把操作挂在 `Service` 上）
+- 校正记录：① 原走查块把 `AddressId` 同时记为 `P 占位符`（data_types 行）与 `ID`（element_stereotypes 行），与 Listing 3.1 的 `data type AddressId P` 矛盾，已按语料统一为占位符 `P`；② 原 YAML 走查块本身不是合法 YAML（`exposed_aggregate: CustomersAggregate` 之后又缩进挂 `root_entity`，实测报 `ScannerError: mapping values are not allowed here`），拆为原生语法段 + 走查记录后不再存在该问题
 
 ---
 <details>
 <summary>📎 原始语法参考（CML/MDSL）— 点击展开</summary>
 
-以下片段忠实摘自语料原文（MDSL：Microservice Domain-Specific Language；缩进按原排版恢复），供对接 BCM 的 CUE 元模型时参考。
+以下片段忠实摘自语料原文（MDSL：Microservice Domain-Specific Language；缩进按原排版恢复），供对接 BCM 的 CUE 元模型时参考。上方「使用示例」的步骤 3+4 段是在 Listing 3.1 基础上加了 MAP 装饰（`serves as … role` / `with responsibility …`）的完整形态；摘录按约定保留**未装饰的原版**，便于对照装饰前后的差异。
 
 **由 DDD 上下文映射派生的示例契约**（步骤 3 的产物形态：数据类型段→端点-操作段→提供方/消费方段；`P` 为占位符，体现部分规格）——SummerSoC 2020 Listing 3.1：
 
